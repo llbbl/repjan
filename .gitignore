@@ -1,0 +1,7 @@
+docs/
+.claude/
+.agent/
+.gemini/
+.cursor/
+.vscode/
+.idea/
