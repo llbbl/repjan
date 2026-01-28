@@ -1,5 +1,16 @@
 # Agent Instructions
 
+
+
+## License Header
+
+All Go source files must include this header:
+```go
+// SPDX-FileCopyrightText: 2026 api2spec
+// SPDX-License-Identifier: FSL-1.1-MIT
+```
+
+
 ## Issue Tracking
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
