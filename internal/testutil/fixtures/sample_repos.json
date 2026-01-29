@@ -1,0 +1,80 @@
+[
+  {
+    "owner": {"login": "testowner"},
+    "name": "awesome-project",
+    "description": "An awesome project for testing",
+    "isPrivate": false,
+    "isFork": false,
+    "isArchived": false,
+    "createdAt": "2024-01-15T10:30:00Z",
+    "pushedAt": "2025-11-28T09:15:00Z",
+    "stargazerCount": 42,
+    "forkCount": 10,
+    "primaryLanguage": {"name": "Go"}
+  },
+  {
+    "owner": {"login": "testowner"},
+    "name": "legacy-app",
+    "description": "A legacy application that needs attention",
+    "isPrivate": false,
+    "isFork": false,
+    "isArchived": false,
+    "createdAt": "2020-03-10T08:00:00Z",
+    "pushedAt": "2023-05-20T16:45:00Z",
+    "stargazerCount": 3,
+    "forkCount": 0,
+    "primaryLanguage": {"name": "JavaScript"}
+  },
+  {
+    "owner": {"login": "testowner"},
+    "name": "forked-lib",
+    "description": "Forked from another repository",
+    "isPrivate": false,
+    "isFork": true,
+    "isArchived": false,
+    "createdAt": "2024-06-01T12:00:00Z",
+    "pushedAt": "2024-06-01T12:30:00Z",
+    "stargazerCount": 0,
+    "forkCount": 0,
+    "primaryLanguage": {"name": "Python"}
+  },
+  {
+    "owner": {"login": "testowner"},
+    "name": "archived-repo",
+    "description": "This repository has been archived",
+    "isPrivate": false,
+    "isFork": false,
+    "isArchived": true,
+    "createdAt": "2019-01-01T00:00:00Z",
+    "pushedAt": "2022-06-15T10:00:00Z",
+    "stargazerCount": 15,
+    "forkCount": 3,
+    "primaryLanguage": {"name": "Ruby"}
+  },
+  {
+    "owner": {"login": "testowner"},
+    "name": "private-secrets",
+    "description": "Private repository for sensitive stuff",
+    "isPrivate": true,
+    "isFork": false,
+    "isArchived": false,
+    "createdAt": "2025-01-01T00:00:00Z",
+    "pushedAt": "2025-12-19T14:30:00Z",
+    "stargazerCount": 0,
+    "forkCount": 0,
+    "primaryLanguage": {"name": "TypeScript"}
+  },
+  {
+    "owner": {"login": "testowner"},
+    "name": "no-language",
+    "description": "Documentation only repository",
+    "isPrivate": false,
+    "isFork": false,
+    "isArchived": false,
+    "createdAt": "2025-06-01T00:00:00Z",
+    "pushedAt": "2025-10-10T08:00:00Z",
+    "stargazerCount": 8,
+    "forkCount": 1,
+    "primaryLanguage": null
+  }
+]

@@ -5,3 +5,9 @@ docs/
 .cursor/
 .vscode/
 .idea/
+
+# macOS
+.DS_Store
+
+# Build artifacts
+/repjan
