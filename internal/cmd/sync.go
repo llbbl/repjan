@@ -6,6 +6,7 @@ package cmd
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -26,45 +27,59 @@ If --owner is not specified, uses the authenticated GitHub user.`,
 		// Determine owner
 		targetOwner := owner
 		if targetOwner == "" {
+			slog.Debug("no owner specified, getting authenticated user", "component", "cmd")
 			user, err := client.GetAuthenticatedUser()
 			if err != nil {
+				slog.Error("failed to get authenticated user", "component", "cmd", "error", err)
 				return fmt.Errorf("failed to get authenticated user: %w\nMake sure you're logged in with 'gh auth login'", err)
 			}
 			targetOwner = user
+			slog.Debug("using authenticated user", "component", "cmd", "owner", targetOwner)
 		}
 
 		// Open database
 		dbPath, err := db.GetDefaultDBPath()
 		if err != nil {
+			slog.Error("failed to get database path", "component", "cmd", "error", err)
 			return fmt.Errorf("getting database path: %w", err)
 		}
 
+		slog.Debug("opening database", "component", "cmd", "path", dbPath)
 		database, err := db.Open(dbPath)
 		if err != nil {
+			slog.Error("failed to open database", "component", "cmd", "path", dbPath, "error", err)
 			return fmt.Errorf("opening database: %w", err)
 		}
 		defer db.Close(database)
 
 		// Ensure migrations are run
+		slog.Debug("running migrations", "component", "cmd")
 		if err := db.RunMigrations(database); err != nil {
+			slog.Error("migration failed", "component", "cmd", "error", err)
 			return fmt.Errorf("running migrations: %w", err)
 		}
 
 		// Fetch repositories from GitHub
 		fmt.Printf("Fetching repositories for %s...\n", targetOwner)
+		slog.Debug("fetching repositories from GitHub", "component", "cmd", "owner", targetOwner)
 		repos, err := client.FetchRepositories(targetOwner)
 		if err != nil {
+			slog.Error("failed to fetch repositories", "component", "cmd", "owner", targetOwner, "error", err)
 			return fmt.Errorf("fetching repositories: %w", err)
 		}
 		fmt.Printf("Found %d repositories\n", len(repos))
+		slog.Debug("fetched repositories", "component", "cmd", "count", len(repos))
 
 		// Upsert repositories to database
+		slog.Debug("upserting repositories to database", "component", "cmd", "count", len(repos))
 		inserted, updated, err := upsertRepositories(database, repos)
 		if err != nil {
+			slog.Error("failed to upsert repositories", "component", "cmd", "error", err)
 			return fmt.Errorf("upserting repositories: %w", err)
 		}
 
 		fmt.Printf("Sync complete: %d inserted, %d updated\n", inserted, updated)
+		slog.Debug("sync completed", "component", "cmd", "inserted", inserted, "updated", updated)
 		return nil
 	},
 }

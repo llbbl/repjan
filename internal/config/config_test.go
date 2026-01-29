@@ -102,3 +102,197 @@ func TestLoad_AllLogFormats(t *testing.T) {
 		assert.Equal(t, format, cfg.LogFormat)
 	}
 }
+
+func TestLoad_DurationVariations(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected time.Duration
+	}{
+		{
+			name:     "seconds",
+			input:    "30s",
+			expected: 30 * time.Second,
+		},
+		{
+			name:     "minutes",
+			input:    "10m",
+			expected: 10 * time.Minute,
+		},
+		{
+			name:     "hours",
+			input:    "2h",
+			expected: 2 * time.Hour,
+		},
+		{
+			name:     "combined duration",
+			input:    "1h30m",
+			expected: 1*time.Hour + 30*time.Minute,
+		},
+		{
+			name:     "milliseconds",
+			input:    "500ms",
+			expected: 500 * time.Millisecond,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Setenv("REPJAN_SYNC_INTERVAL", tt.input)
+			defer os.Unsetenv("REPJAN_SYNC_INTERVAL")
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, cfg.SyncInterval)
+		})
+	}
+}
+
+func TestLoad_EmptyEnvVars(t *testing.T) {
+	// Set empty strings - should use defaults
+	os.Setenv("REPJAN_LOG_LEVEL", "")
+	os.Setenv("REPJAN_LOG_FORMAT", "")
+	os.Setenv("REPJAN_SYNC_INTERVAL", "")
+	os.Setenv("REPJAN_DB_PATH", "")
+	defer func() {
+		os.Unsetenv("REPJAN_LOG_LEVEL")
+		os.Unsetenv("REPJAN_LOG_FORMAT")
+		os.Unsetenv("REPJAN_SYNC_INTERVAL")
+		os.Unsetenv("REPJAN_DB_PATH")
+	}()
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	// Empty strings should fall back to defaults
+	assert.Equal(t, "info", cfg.LogLevel)
+	assert.Equal(t, "text", cfg.LogFormat)
+	assert.Equal(t, 5*time.Minute, cfg.SyncInterval)
+	assert.Equal(t, "", cfg.DBPath) // DBPath default is empty string
+}
+
+func TestGetEnv(t *testing.T) {
+	tests := []struct {
+		name         string
+		envValue     string
+		defaultValue string
+		expected     string
+		setEnv       bool
+	}{
+		{
+			name:         "returns env value when set",
+			envValue:     "custom-value",
+			defaultValue: "default",
+			expected:     "custom-value",
+			setEnv:       true,
+		},
+		{
+			name:         "returns default when not set",
+			envValue:     "",
+			defaultValue: "default",
+			expected:     "default",
+			setEnv:       false,
+		},
+		{
+			name:         "returns default when empty",
+			envValue:     "",
+			defaultValue: "default",
+			expected:     "default",
+			setEnv:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := "TEST_GET_ENV_KEY"
+			if tt.setEnv {
+				os.Setenv(key, tt.envValue)
+			} else {
+				os.Unsetenv(key)
+			}
+			defer os.Unsetenv(key)
+
+			result := getEnv(key, tt.defaultValue)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestGetDurationEnv(t *testing.T) {
+	tests := []struct {
+		name         string
+		envValue     string
+		defaultValue time.Duration
+		expected     time.Duration
+		setEnv       bool
+	}{
+		{
+			name:         "returns parsed duration when valid",
+			envValue:     "1h",
+			defaultValue: 5 * time.Minute,
+			expected:     1 * time.Hour,
+			setEnv:       true,
+		},
+		{
+			name:         "returns default when not set",
+			envValue:     "",
+			defaultValue: 5 * time.Minute,
+			expected:     5 * time.Minute,
+			setEnv:       false,
+		},
+		{
+			name:         "returns default when empty",
+			envValue:     "",
+			defaultValue: 5 * time.Minute,
+			expected:     5 * time.Minute,
+			setEnv:       true,
+		},
+		{
+			name:         "returns default when invalid",
+			envValue:     "invalid",
+			defaultValue: 5 * time.Minute,
+			expected:     5 * time.Minute,
+			setEnv:       true,
+		},
+		{
+			name:         "returns default for numeric without unit",
+			envValue:     "30",
+			defaultValue: 5 * time.Minute,
+			expected:     5 * time.Minute,
+			setEnv:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := "TEST_GET_DURATION_KEY"
+			if tt.setEnv {
+				os.Setenv(key, tt.envValue)
+			} else {
+				os.Unsetenv(key)
+			}
+			defer os.Unsetenv(key)
+
+			result := getDurationEnv(key, tt.defaultValue)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestLoad_DBPathWithSpaces(t *testing.T) {
+	os.Setenv("REPJAN_DB_PATH", "/path/with spaces/test.db")
+	defer os.Unsetenv("REPJAN_DB_PATH")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "/path/with spaces/test.db", cfg.DBPath)
+}
+
+func TestLoad_DBPathWithSpecialChars(t *testing.T) {
+	os.Setenv("REPJAN_DB_PATH", "/path/with-dashes_and_underscores/test.db")
+	defer os.Unsetenv("REPJAN_DB_PATH")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "/path/with-dashes_and_underscores/test.db", cfg.DBPath)
+}

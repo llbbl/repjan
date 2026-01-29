@@ -5,7 +5,7 @@
 package sync
 
 import (
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/llbbl/repjan/internal/github"
@@ -99,6 +99,7 @@ func (s *Syncer) run() {
 		case <-s.stopCh:
 			return
 		case <-ticker.C:
+			slog.Debug("sync tick", "component", "sync", "interval", s.interval)
 			s.performSync()
 		}
 	}
@@ -109,7 +110,7 @@ func (s *Syncer) shouldSyncOnStartup() bool {
 	lastSync, err := s.store.GetLastSyncTime(s.owner)
 	if err != nil {
 		// If we can't determine last sync time, sync anyway
-		log.Printf("sync: error getting last sync time: %v", err)
+		slog.Warn("failed to get last sync time", "component", "sync", "error", err)
 		return true
 	}
 
@@ -140,12 +141,13 @@ func (s *Syncer) performSync() {
 			Type:  SyncError,
 			Error: err,
 		}
-		log.Printf("sync: error during sync: %v", err)
+		slog.Error("sync failed", "component", "sync", "error", err, "owner", s.owner)
 	} else {
 		msg = SyncMsg{
 			Type:  SyncCompleted,
 			Repos: repos,
 		}
+		slog.Info("sync completed", "component", "sync", "owner", s.owner, "repos", len(repos))
 	}
 
 	select {
@@ -157,6 +159,8 @@ func (s *Syncer) performSync() {
 
 // doSync fetches repositories from GitHub and upserts them to the database.
 func (s *Syncer) doSync() ([]github.Repository, error) {
+	slog.Debug("starting sync", "component", "sync", "owner", s.owner)
+
 	// Fetch from GitHub
 	repos, err := s.client.FetchRepositories(s.owner)
 	if err != nil {

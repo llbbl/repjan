@@ -7,6 +7,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -32,8 +33,11 @@ func GetDefaultDBPath() (string, error) {
 // Open opens or creates a SQLite database at the specified path.
 // Use ":memory:" for an in-memory database (useful for testing).
 func Open(dbPath string) (*sql.DB, error) {
+	slog.Info("opening database", "component", "db", "path", dbPath)
+
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
+		slog.Error("failed to open database", "component", "db", "path", dbPath, "error", err)
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
 
@@ -57,7 +61,9 @@ func Close(db *sql.DB) error {
 	if db == nil {
 		return nil
 	}
+	slog.Debug("closing database", "component", "db")
 	if err := db.Close(); err != nil {
+		slog.Error("failed to close database", "component", "db", "error", err)
 		return fmt.Errorf("closing database: %w", err)
 	}
 	return nil

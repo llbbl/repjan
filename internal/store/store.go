@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/llbbl/repjan/internal/github"
@@ -34,8 +35,11 @@ func (s *Store) UpsertRepositories(owner string, repos []github.Repository) erro
 		return nil
 	}
 
+	slog.Debug("upserting repositories", "component", "store", "owner", owner, "count", len(repos))
+
 	tx, err := s.db.Begin()
 	if err != nil {
+		slog.Error("failed to begin transaction for upsert", "component", "store", "owner", owner, "error", err)
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // Rollback is no-op after commit
@@ -85,6 +89,7 @@ func (s *Store) UpsertRepositories(owner string, repos []github.Repository) erro
 			now,
 		)
 		if err != nil {
+			slog.Error("failed to insert repository", "component", "store", "owner", repoOwner, "repo", repo.Name, "error", err)
 			return fmt.Errorf("inserting repository %s: %w", fullName, err)
 		}
 	}
@@ -455,6 +460,8 @@ type RepoChange struct {
 // RecordRepoChange records a modification to a repository.
 // prevState and newState can be any JSON-serializable value (or nil).
 func (s *Store) RecordRepoChange(owner, repoName, action, performedBy string, prevState, newState interface{}, notes string) error {
+	slog.Debug("recording repo change", "component", "store", "owner", owner, "repo", repoName, "action", action)
+
 	var prevJSON, newJSON string
 	if prevState != nil {
 		if data, err := json.Marshal(prevState); err == nil {
@@ -472,6 +479,7 @@ func (s *Store) RecordRepoChange(owner, repoName, action, performedBy string, pr
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, owner, repoName, action, performedBy, nullString(prevJSON), nullString(newJSON), nullString(notes))
 	if err != nil {
+		slog.Error("failed to record repo change", "component", "store", "owner", owner, "repo", repoName, "action", action, "error", err)
 		return fmt.Errorf("recording repo change: %w", err)
 	}
 
@@ -594,11 +602,14 @@ type SyncRecord struct {
 
 // RecordSyncStart creates a new sync record and returns its ID.
 func (s *Store) RecordSyncStart(owner string) (int64, error) {
+	slog.Debug("recording sync start", "component", "store", "owner", owner)
+
 	result, err := s.db.Exec(`
 		INSERT INTO sync_history (owner, started_at, status)
 		VALUES (?, ?, 'running')
 	`, owner, formatTimeForSQLite(time.Now()))
 	if err != nil {
+		slog.Error("failed to record sync start", "component", "store", "owner", owner, "error", err)
 		return 0, fmt.Errorf("inserting sync record: %w", err)
 	}
 
