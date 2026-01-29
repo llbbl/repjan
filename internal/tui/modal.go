@@ -324,49 +324,205 @@ func openInBrowser(url string) tea.Cmd {
 func (m Model) renderHelpModal() string {
 	var lines []string
 
-	lines = append(lines, m.styles.ModalTitle.Render("Help"))
-	lines = append(lines, strings.Repeat("-", 40))
+	// Title
+	lines = append(lines, m.styles.ModalTitle.Render("Help - Keyboard Shortcuts"))
+	lines = append(lines, strings.Repeat("-", 55))
+
+	// Category header style (dimmed)
+	categoryStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+
+	// Helper to format a keybinding line
+	formatBinding := func(key, desc string) string {
+		return fmt.Sprintf("  %s  %s",
+			m.styles.HelpKey.Render(fmt.Sprintf("%-13s", key)),
+			m.styles.HelpDesc.Render(desc))
+	}
+
+	// Navigation section
+	lines = append(lines, categoryStyle.Render("Navigation:"))
+	lines = append(lines, formatBinding("j/k or Up/Dn", "Navigate list"))
+	lines = append(lines, formatBinding("g/G", "Go to top/bottom"))
+	lines = append(lines, formatBinding("/", "Search by name"))
 	lines = append(lines, "")
-	lines = append(lines, "Navigation:")
-	lines = append(lines, "  j/k, Up/Down  Move cursor")
-	lines = append(lines, "  g/G           Go to top/bottom")
-	lines = append(lines, "  Enter         View repo details")
+
+	// Filtering section
+	lines = append(lines, categoryStyle.Render("Filtering:"))
+	lines = append(lines, formatBinding("a", "Show all"))
+	lines = append(lines, formatBinding("o", "Show old (365+ days)"))
+	lines = append(lines, formatBinding("n", "Show no stars"))
+	lines = append(lines, formatBinding("f", "Show only forks"))
+	lines = append(lines, formatBinding("l", "Language filter"))
+	lines = append(lines, formatBinding("p", "Toggle private/public"))
 	lines = append(lines, "")
-	lines = append(lines, "Selection:")
-	lines = append(lines, "  Space         Mark/unmark repo")
-	lines = append(lines, "  A             Mark all visible")
-	lines = append(lines, "  U             Unmark all")
+
+	// Sorting section
+	lines = append(lines, categoryStyle.Render("Sorting:"))
+	lines = append(lines, formatBinding("1-4", "Sort by Name/Activity/Stars/Language"))
 	lines = append(lines, "")
-	lines = append(lines, "Filters:")
-	lines = append(lines, "  a             All repos")
-	lines = append(lines, "  o             Old (inactive)")
-	lines = append(lines, "  n             No stars")
-	lines = append(lines, "  f             Forks")
-	lines = append(lines, "  p             Private")
-	lines = append(lines, "  l             Language filter")
-	lines = append(lines, "  /             Search")
+
+	// Actions section
+	lines = append(lines, categoryStyle.Render("Actions:"))
+	lines = append(lines, formatBinding("Space", "Mark/unmark for archiving"))
+	lines = append(lines, formatBinding("Shift+A/U", "Mark/unmark all visible"))
+	lines = append(lines, formatBinding("Enter", "View details"))
+	lines = append(lines, formatBinding("a", "Archive marked repos"))
+	lines = append(lines, formatBinding("e", "Export marked to JSON"))
 	lines = append(lines, "")
-	lines = append(lines, "Actions:")
-	lines = append(lines, "  a             Archive marked (when marked)")
-	lines = append(lines, "  e             Export marked")
+
+	// Fabric section (conditional)
+	if m.fabricEnabled {
+		lines = append(lines, categoryStyle.Render("Fabric (enabled):"))
+	} else {
+		lines = append(lines, categoryStyle.Render("Fabric (if enabled):"))
+	}
+	lines = append(lines, formatBinding("i", "Analyze repo"))
+	lines = append(lines, formatBinding("Shift+I", "Batch analyze"))
 	lines = append(lines, "")
-	lines = append(lines, "Press Esc or q to close")
+
+	// Close hint
+	lines = append(lines, m.styles.HelpKey.Render("[Esc] Close"))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
-	return m.styles.ModalBorder.Render(content)
+	modal := m.styles.ModalBorder.Render(content)
+
+	// Calculate modal dimensions for centering
+	modalWidth := lipgloss.Width(modal)
+	modalHeight := lipgloss.Height(modal)
+
+	// Center the modal
+	horizontalPadding := (m.width - modalWidth) / 2
+	verticalPadding := (m.height - modalHeight) / 2
+
+	if horizontalPadding < 0 {
+		horizontalPadding = 0
+	}
+	if verticalPadding < 0 {
+		verticalPadding = 0
+	}
+
+	// Create centered modal using lipgloss positioning
+	centeredModal := lipgloss.NewStyle().
+		MarginLeft(horizontalPadding).
+		MarginTop(verticalPadding).
+		Render(modal)
+
+	return centeredModal
 }
 
 // renderLanguageModal renders the language filter selection modal.
 func (m Model) renderLanguageModal() string {
 	var lines []string
 
-	lines = append(lines, m.styles.ModalTitle.Render("Language Filter"))
-	lines = append(lines, strings.Repeat("-", 40))
-	lines = append(lines, "")
-	lines = append(lines, "Language filtering not yet implemented.")
-	lines = append(lines, "")
-	lines = append(lines, "Press Esc or q to close")
+	lines = append(lines, m.styles.ModalTitle.Render("Filter by Language"))
+	lines = append(lines, strings.Repeat("-", 30))
+
+	// Render language options
+	maxVisible := 15
+	startIdx := 0
+	if m.languageCursor >= maxVisible {
+		startIdx = m.languageCursor - maxVisible + 1
+	}
+
+	for i, opt := range m.languages {
+		if i < startIdx {
+			continue
+		}
+		if i >= startIdx+maxVisible {
+			lines = append(lines, m.styles.HelpDesc.Render("  ..."))
+			break
+		}
+
+		// Build the line with cursor indicator
+		cursor := "  "
+		if i == m.languageCursor {
+			cursor = "> "
+		}
+
+		// Format: cursor + name + count (right-aligned)
+		countStr := fmt.Sprintf("(%d)", opt.count)
+		nameWidth := 20
+		name := opt.name
+		if len(name) > nameWidth {
+			name = name[:nameWidth-3] + "..."
+		}
+
+		lineText := fmt.Sprintf("%s%-*s %6s", cursor, nameWidth, name, countStr)
+
+		// Highlight current selection
+		if i == m.languageCursor {
+			lines = append(lines, m.styles.ActiveFilter.Render(lineText))
+		} else if m.languageFilter != "" && opt.name == m.languageFilter {
+			// Highlight currently applied filter
+			lines = append(lines, m.styles.HelpKey.Render(lineText))
+		} else {
+			lines = append(lines, m.styles.ModalContent.Render(lineText))
+		}
+	}
+
+	lines = append(lines, strings.Repeat("-", 30))
+	lines = append(lines, m.styles.HelpDesc.Render("j/k: Navigate  Enter: Select  Esc: Cancel"))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return m.styles.ModalBorder.Render(content)
+}
+
+// populateLanguages builds the language options list from the current repos.
+func (m *Model) populateLanguages() {
+	// Count repos per language
+	counts := make(map[string]int)
+	for _, repo := range m.repos {
+		// Skip archived repos to match filter behavior
+		if repo.IsArchived {
+			continue
+		}
+		lang := repo.PrimaryLanguage
+		if lang == "" {
+			lang = "None"
+		}
+		counts[lang]++
+	}
+
+	// Calculate total non-archived repos
+	totalNonArchived := 0
+	for _, count := range counts {
+		totalNonArchived += count
+	}
+
+	// Build sorted list starting with "All Languages"
+	m.languages = []languageOption{{name: "All Languages", count: totalNonArchived}}
+
+	// Get sorted language names (excluding empty since we've mapped it to "None")
+	var names []string
+	for name := range counts {
+		names = append(names, name)
+	}
+
+	// Sort by count descending, then by name ascending
+	sortLanguagesByCount(names, counts)
+
+	// Add languages to the list
+	for _, name := range names {
+		m.languages = append(m.languages, languageOption{
+			name:  name,
+			count: counts[name],
+		})
+	}
+}
+
+// sortLanguagesByCount sorts language names by their count (descending), then alphabetically.
+func sortLanguagesByCount(names []string, counts map[string]int) {
+	// Simple bubble sort for clarity - typically small number of languages
+	for i := 0; i < len(names)-1; i++ {
+		for j := 0; j < len(names)-i-1; j++ {
+			// Sort by count descending
+			if counts[names[j]] < counts[names[j+1]] {
+				names[j], names[j+1] = names[j+1], names[j]
+			} else if counts[names[j]] == counts[names[j+1]] {
+				// If counts are equal, sort alphabetically ascending
+				if names[j] > names[j+1] {
+					names[j], names[j+1] = names[j+1], names[j]
+				}
+			}
+		}
+	}
 }

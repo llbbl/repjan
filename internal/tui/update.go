@@ -110,6 +110,11 @@ func (m Model) handleModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmModalKeys(msg)
 	}
 
+	// Handle language modal specific keys
+	if m.activeModal == ModalLanguage {
+		return m.handleLanguageModalKeys(msg)
+	}
+
 	switch msg.String() {
 	case "esc", "q":
 		// Close any modal
@@ -122,19 +127,41 @@ func (m Model) handleModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.activeModal = ModalNone
 		m.selectedRepo = nil
 		return m, nil
+	}
+
+	return m, nil
+}
+
+// handleLanguageModalKeys handles key input for the language filter modal.
+func (m Model) handleLanguageModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		// Close modal without changing filter
+		m.activeModal = ModalNone
+		return m, nil
+
+	case "enter":
+		// Select language and apply filter
+		if m.languageCursor >= 0 && m.languageCursor < len(m.languages) {
+			selected := m.languages[m.languageCursor]
+			if selected.name == "All Languages" {
+				// Clear language filter
+				m.languageFilter = ""
+			} else {
+				// Apply selected language filter
+				m.languageFilter = selected.name
+			}
+			m.RefreshFilteredRepos()
+		}
+		m.activeModal = ModalNone
+		return m, nil
 
 	case "j", "down":
-		// Navigate within language modal
-		if m.activeModal == ModalLanguage {
-			m.handleLanguageModalNav(1)
-		}
+		m.handleLanguageModalNav(1)
 		return m, nil
 
 	case "k", "up":
-		// Navigate within language modal
-		if m.activeModal == ModalLanguage {
-			m.handleLanguageModalNav(-1)
-		}
+		m.handleLanguageModalNav(-1)
 		return m, nil
 	}
 
@@ -222,6 +249,8 @@ func (m Model) handleMainViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "l":
 		// Open language filter modal
+		m.populateLanguages()
+		m.languageCursor = 0
 		m.activeModal = ModalLanguage
 		return m, nil
 
@@ -330,9 +359,14 @@ func (m Model) handleMainViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleLanguageModalNav handles navigation within the language filter modal.
 func (m *Model) handleLanguageModalNav(delta int) {
-	// This will be used by the language modal to navigate the language list
-	// The actual implementation depends on how we track the language cursor
-	// For now, this is a placeholder that can be expanded
+	newPos := m.languageCursor + delta
+	if newPos < 0 {
+		newPos = 0
+	}
+	if newPos >= len(m.languages) {
+		newPos = len(m.languages) - 1
+	}
+	m.languageCursor = newPos
 }
 
 // applySearchFilter filters repos based on the current search query.

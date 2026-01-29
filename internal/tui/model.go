@@ -42,6 +42,12 @@ const (
 	ModalLanguage
 )
 
+// languageOption represents a language filter option with its repo count.
+type languageOption struct {
+	name  string
+	count int
+}
+
 // Model is the main TUI model for repjan.
 type Model struct {
 	// Data
@@ -62,8 +68,10 @@ type Model struct {
 	sortAscending bool
 
 	// Modals
-	activeModal  ModalType
-	selectedRepo *github.Repository // for detail modal
+	activeModal    ModalType
+	selectedRepo   *github.Repository // for detail modal
+	languageCursor int                // cursor position in language list
+	languages      []languageOption   // cached language options
 
 	// Search
 	searchMode  bool

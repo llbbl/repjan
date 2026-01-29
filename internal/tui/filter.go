@@ -44,8 +44,15 @@ func filterRepos(repos []github.Repository, filter Filter, language string) []gi
 		}
 
 		// Apply language filter if specified
-		if language != "" && repo.PrimaryLanguage != language {
-			continue
+		if language != "" {
+			// "None" matches repos with empty PrimaryLanguage
+			if language == "None" {
+				if repo.PrimaryLanguage != "" {
+					continue
+				}
+			} else if repo.PrimaryLanguage != language {
+				continue
+			}
 		}
 
 		result = append(result, repo)
