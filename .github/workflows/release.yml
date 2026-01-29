@@ -58,7 +58,7 @@ jobs:
         run: go build -ldflags="-s -w -X github.com/llbbl/repjan/internal/cmd.Version=${{ github.ref_name }}" -o ${{ matrix.artifact }} ./cmd/repjan
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
