@@ -928,3 +928,271 @@ func TestFilterRepos_NoneLanguageWithVisibility(t *testing.T) {
 	result = filterRepos(repos, FilterAll, "None", filterOpts{showPrivate: true, showArchived: false})
 	assert.Len(t, result, 2)
 }
+
+func TestSearchRepos(t *testing.T) {
+	tests := []struct {
+		name     string
+		repos    []github.Repository
+		query    string
+		wantLen  int
+		wantName string // expected first match name (if any)
+	}{
+		{
+			name: "empty query returns all repos",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("repo1")),
+				testutil.NewTestRepo(testutil.WithName("repo2")),
+				testutil.NewTestRepo(testutil.WithName("repo3")),
+			},
+			query:   "",
+			wantLen: 3,
+		},
+		{
+			name: "no matches returns empty slice",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("alpha")),
+				testutil.NewTestRepo(testutil.WithName("beta")),
+			},
+			query:   "zebra",
+			wantLen: 0,
+		},
+		{
+			name: "partial name match",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("my-awesome-project")),
+				testutil.NewTestRepo(testutil.WithName("another-project")),
+				testutil.NewTestRepo(testutil.WithName("unrelated")),
+			},
+			query:    "project",
+			wantLen:  2,
+			wantName: "my-awesome-project",
+		},
+		{
+			name: "case insensitive lowercase query",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("MyRepo")),
+				testutil.NewTestRepo(testutil.WithName("OTHER")),
+			},
+			query:    "myrepo",
+			wantLen:  1,
+			wantName: "MyRepo",
+		},
+		{
+			name: "case insensitive uppercase query",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("myrepo")),
+				testutil.NewTestRepo(testutil.WithName("other")),
+			},
+			query:    "MYREPO",
+			wantLen:  1,
+			wantName: "myrepo",
+		},
+		{
+			name: "case insensitive mixed case query",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("MyAwesomeRepo")),
+				testutil.NewTestRepo(testutil.WithName("other")),
+			},
+			query:    "mYaWeSoMe",
+			wantLen:  1,
+			wantName: "MyAwesomeRepo",
+		},
+		{
+			name: "multiple matches",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("test-one")),
+				testutil.NewTestRepo(testutil.WithName("test-two")),
+				testutil.NewTestRepo(testutil.WithName("test-three")),
+				testutil.NewTestRepo(testutil.WithName("other")),
+			},
+			query:   "test",
+			wantLen: 3,
+		},
+		{
+			name: "exact name match",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("exact")),
+				testutil.NewTestRepo(testutil.WithName("exactlylong")),
+				testutil.NewTestRepo(testutil.WithName("other")),
+			},
+			query:    "exact",
+			wantLen:  2, // Both "exact" and "exactlylong" contain "exact"
+			wantName: "exact",
+		},
+		{
+			name: "single character search",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("a")),
+				testutil.NewTestRepo(testutil.WithName("ab")),
+				testutil.NewTestRepo(testutil.WithName("abc")),
+				testutil.NewTestRepo(testutil.WithName("xyz")),
+			},
+			query:   "a",
+			wantLen: 3,
+		},
+		{
+			name:    "empty repo list returns empty",
+			repos:   []github.Repository{},
+			query:   "test",
+			wantLen: 0,
+		},
+		{
+			name: "search with hyphen",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("my-repo")),
+				testutil.NewTestRepo(testutil.WithName("myrepo")),
+				testutil.NewTestRepo(testutil.WithName("my_repo")),
+			},
+			query:    "my-",
+			wantLen:  1,
+			wantName: "my-repo",
+		},
+		{
+			name: "search with underscore",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("my_repo")),
+				testutil.NewTestRepo(testutil.WithName("myrepo")),
+				testutil.NewTestRepo(testutil.WithName("my-repo")),
+			},
+			query:    "_repo",
+			wantLen:  1,
+			wantName: "my_repo",
+		},
+		{
+			name: "search with numbers",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("project123")),
+				testutil.NewTestRepo(testutil.WithName("project456")),
+				testutil.NewTestRepo(testutil.WithName("other")),
+			},
+			query:    "123",
+			wantLen:  1,
+			wantName: "project123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := searchRepos(tt.repos, tt.query)
+			assert.Len(t, result, tt.wantLen)
+
+			if tt.wantLen > 0 && tt.wantName != "" {
+				assert.Equal(t, tt.wantName, result[0].Name)
+			}
+		})
+	}
+}
+
+func TestSearchRepos_PreservesOrder(t *testing.T) {
+	repos := []github.Repository{
+		testutil.NewTestRepo(testutil.WithName("aaa-test")),
+		testutil.NewTestRepo(testutil.WithName("bbb-test")),
+		testutil.NewTestRepo(testutil.WithName("ccc-test")),
+	}
+
+	result := searchRepos(repos, "test")
+
+	require.Len(t, result, 3)
+	// Order should be preserved from input
+	assert.Equal(t, "aaa-test", result[0].Name)
+	assert.Equal(t, "bbb-test", result[1].Name)
+	assert.Equal(t, "ccc-test", result[2].Name)
+}
+
+func TestSearchRepos_DoesNotMutateOriginal(t *testing.T) {
+	original := []github.Repository{
+		testutil.NewTestRepo(testutil.WithName("alpha")),
+		testutil.NewTestRepo(testutil.WithName("beta")),
+	}
+
+	// Store original names
+	firstName := original[0].Name
+	secondName := original[1].Name
+
+	_ = searchRepos(original, "alpha")
+
+	// Original should be unchanged
+	assert.Equal(t, firstName, original[0].Name)
+	assert.Equal(t, secondName, original[1].Name)
+	assert.Len(t, original, 2)
+}
+
+func TestSearchRepos_PreservesRepoData(t *testing.T) {
+	original := testutil.NewTestRepo(
+		testutil.WithName("test-repo"),
+		testutil.WithOwner("test-owner"),
+		testutil.WithStars(42),
+		testutil.WithLanguage("Go"),
+		testutil.WithDescription("Test description"),
+	)
+
+	repos := []github.Repository{original}
+	result := searchRepos(repos, "test")
+
+	require.Len(t, result, 1)
+	assert.Equal(t, "test-repo", result[0].Name)
+	assert.Equal(t, "test-owner", result[0].Owner)
+	assert.Equal(t, 42, result[0].StargazerCount)
+	assert.Equal(t, "Go", result[0].PrimaryLanguage)
+	assert.Equal(t, "Test description", result[0].Description)
+}
+
+func TestSearchRepos_SpecialCharacters(t *testing.T) {
+	tests := []struct {
+		name     string
+		repoName string
+		query    string
+		matches  bool
+	}{
+		{
+			name:     "dot in name",
+			repoName: "my.repo",
+			query:    ".",
+			matches:  true,
+		},
+		{
+			name:     "at sign in name",
+			repoName: "my@repo",
+			query:    "@",
+			matches:  true,
+		},
+		{
+			name:     "plus in name",
+			repoName: "cpp+plus",
+			query:    "+",
+			matches:  true,
+		},
+		{
+			name:     "parentheses in search",
+			repoName: "func()",
+			query:    "()",
+			matches:  true,
+		},
+		{
+			name:     "brackets in name",
+			repoName: "array[0]",
+			query:    "[0]",
+			matches:  true,
+		},
+		{
+			name:     "space in search query",
+			repoName: "my repo",
+			query:    "my ",
+			matches:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repos := []github.Repository{
+				testutil.NewTestRepo(testutil.WithName(tt.repoName)),
+			}
+			result := searchRepos(repos, tt.query)
+			if tt.matches {
+				assert.Len(t, result, 1, "expected match for query %q in name %q", tt.query, tt.repoName)
+			} else {
+				assert.Empty(t, result, "expected no match for query %q in name %q", tt.query, tt.repoName)
+			}
+		})
+	}
+}

@@ -1,6 +1,6 @@
 # repjan
 
-A terminal user interface (TUI) tool for managing GitHub repositories at scale. Visualize, filter, and batch archive repositories with optional AI-powered analysis via Fabric.
+A terminal user interface (TUI) tool for managing GitHub repositories at scale. Visualize, filter, and batch archive repositories.
 
 ## Features
 

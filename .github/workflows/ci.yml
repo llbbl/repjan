@@ -26,8 +26,11 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run tests
-        run: go test -v -race ./...
+      - name: Run tests with coverage
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Display coverage
+        run: go tool cover -func=coverage.out | tail -1
 
   lint:
     name: Lint

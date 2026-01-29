@@ -74,6 +74,9 @@ ci: add GitHub Actions release workflow
 
 **When calling commit-manager**, include: "Use conventional commit format (type(scope): description)" but do NOT specify attribution or Co-Authored-By formatting.
 
+**Version Tags:**
+Use semver format without `v` prefix: `0.1.0`, `1.2.3` (not `v0.1.0`)
+
 
 ## TUI Defaults
 

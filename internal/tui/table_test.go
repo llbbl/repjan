@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/llbbl/repjan/internal/github"
+	"github.com/llbbl/repjan/internal/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -151,6 +153,274 @@ func TestFormatRelativeTime_SpecificDays(t *testing.T) {
 			pastTime := now.Add(-time.Duration(tt.days*24) * time.Hour)
 			got := formatRelativeTime(pastTime)
 			assert.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+func TestTruncateWithEllipsis(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		maxLen   int
+		expected string
+	}{
+		{
+			name:     "string shorter than max unchanged",
+			input:    "hello",
+			maxLen:   10,
+			expected: "hello",
+		},
+		{
+			name:     "string exactly max length unchanged",
+			input:    "hello",
+			maxLen:   5,
+			expected: "hello",
+		},
+		{
+			name:     "string longer than max truncated with ellipsis",
+			input:    "hello world",
+			maxLen:   8,
+			expected: "hello...",
+		},
+		{
+			name:     "empty string unchanged",
+			input:    "",
+			maxLen:   10,
+			expected: "",
+		},
+		{
+			name:     "max length less than 4 gets adjusted to 4",
+			input:    "hello",
+			maxLen:   3,
+			expected: "h...",
+		},
+		{
+			name:     "max length of 4 with long string",
+			input:    "hello",
+			maxLen:   4,
+			expected: "h...",
+		},
+		{
+			name:     "single character with max 4",
+			input:    "h",
+			maxLen:   4,
+			expected: "h",
+		},
+		{
+			name:     "exactly 4 chars with max 4",
+			input:    "test",
+			maxLen:   4,
+			expected: "test",
+		},
+		{
+			name:     "5 chars with max 4 truncates",
+			input:    "tests",
+			maxLen:   4,
+			expected: "t...",
+		},
+		{
+			name:     "long repository name truncation",
+			input:    "very-long-repository-name-that-exceeds-limit",
+			maxLen:   25,
+			expected: "very-long-repository-n...",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := truncateWithEllipsis(tt.input, tt.maxLen)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestTruncateWithEllipsis_EdgeCases(t *testing.T) {
+	t.Run("max length of 0 gets adjusted to 4", func(t *testing.T) {
+		result := truncateWithEllipsis("hello", 0)
+		// max is adjusted to 4, so "hello" (5 chars) becomes "h..."
+		assert.Equal(t, "h...", result)
+	})
+
+	t.Run("max length of 1 gets adjusted to 4", func(t *testing.T) {
+		result := truncateWithEllipsis("hello", 1)
+		assert.Equal(t, "h...", result)
+	})
+
+	t.Run("negative max length gets adjusted to 4", func(t *testing.T) {
+		result := truncateWithEllipsis("hello", -5)
+		assert.Equal(t, "h...", result)
+	})
+
+	t.Run("very long string", func(t *testing.T) {
+		longStr := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		result := truncateWithEllipsis(longStr, 10)
+		assert.Equal(t, "abcdefg...", result)
+		assert.Len(t, result, 10)
+	})
+}
+
+func TestGetStatusIcon(t *testing.T) {
+	tests := []struct {
+		name     string
+		repo     github.Repository
+		expected string
+	}{
+		{
+			name:     "archived repo returns archived icon",
+			repo:     testutil.NewTestRepo(testutil.WithArchived(true)),
+			expected: iconArchived,
+		},
+		{
+			name: "archive candidate returns candidate icon",
+			// A repo is an archive candidate if inactive > 365 days and no engagement
+			repo:     testutil.NewTestRepo(testutil.WithDaysInactive(400), testutil.WithStars(0), testutil.WithForks(0)),
+			expected: iconCandidate,
+		},
+		{
+			name: "active repo returns active icon",
+			// Recent activity and some engagement
+			repo:     testutil.NewTestRepo(testutil.WithDaysInactive(30), testutil.WithStars(10)),
+			expected: iconActive,
+		},
+		{
+			name: "archived takes precedence over candidate criteria",
+			// Even if it meets candidate criteria, archived should win
+			repo:     testutil.NewTestRepo(testutil.WithArchived(true), testutil.WithDaysInactive(400), testutil.WithStars(0), testutil.WithForks(0)),
+			expected: iconArchived,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getStatusIcon(tt.repo)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestGetStatusText(t *testing.T) {
+	tests := []struct {
+		name     string
+		repo     github.Repository
+		expected string
+	}{
+		{
+			name:     "archived repo returns Archived",
+			repo:     testutil.NewTestRepo(testutil.WithArchived(true)),
+			expected: "Archived",
+		},
+		{
+			name: "archive candidate returns Candidate",
+			// A repo is an archive candidate if inactive > 365 days and no engagement
+			repo:     testutil.NewTestRepo(testutil.WithDaysInactive(400), testutil.WithStars(0), testutil.WithForks(0)),
+			expected: "Candidate",
+		},
+		{
+			name: "active repo returns Active",
+			// Recent activity and some engagement
+			repo:     testutil.NewTestRepo(testutil.WithDaysInactive(30), testutil.WithStars(10)),
+			expected: "Active",
+		},
+		{
+			name: "archived takes precedence over candidate criteria",
+			// Even if it meets candidate criteria, archived should win
+			repo:     testutil.NewTestRepo(testutil.WithArchived(true), testutil.WithDaysInactive(400), testutil.WithStars(0), testutil.WithForks(0)),
+			expected: "Archived",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getStatusText(tt.repo)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestGetStatusIcon_ArchiveCandidateCriteria(t *testing.T) {
+	// Test various conditions that make a repo an archive candidate
+	// Based on analyze.IsArchiveCandidate logic:
+	// - No activity in 1+ year (365+ days) or 2+ years (730+ days)
+	// - No community engagement (0 stars AND 0 forks)
+	// - Stale fork (is fork AND > 180 days inactive)
+	// - Legacy language and inactive > 365 days
+
+	tests := []struct {
+		name        string
+		repo        github.Repository
+		isCandidate bool
+	}{
+		{
+			name:        "old repo with no engagement is candidate",
+			repo:        testutil.NewTestRepo(testutil.WithDaysInactive(400), testutil.WithStars(0), testutil.WithForks(0)),
+			isCandidate: true,
+		},
+		{
+			name:        "old repo with stars is candidate (inactivity alone qualifies)",
+			repo:        testutil.NewTestRepo(testutil.WithDaysInactive(400), testutil.WithStars(10)),
+			isCandidate: true,
+		},
+		{
+			name:        "recent repo with no engagement is candidate",
+			repo:        testutil.NewTestRepo(testutil.WithDaysInactive(100), testutil.WithStars(0), testutil.WithForks(0)),
+			isCandidate: true,
+		},
+		{
+			name:        "recent repo with engagement is not candidate",
+			repo:        testutil.NewTestRepo(testutil.WithDaysInactive(100), testutil.WithStars(5)),
+			isCandidate: false,
+		},
+		{
+			name:        "stale fork is candidate",
+			repo:        testutil.NewTestRepo(testutil.WithFork(true), testutil.WithDaysInactive(200), testutil.WithStars(5)),
+			isCandidate: true,
+		},
+		{
+			name:        "recent fork is not candidate (if has engagement)",
+			repo:        testutil.NewTestRepo(testutil.WithFork(true), testutil.WithDaysInactive(100), testutil.WithStars(5)),
+			isCandidate: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			icon := getStatusIcon(tt.repo)
+			if tt.isCandidate {
+				assert.Equal(t, iconCandidate, icon, "expected candidate icon")
+			} else {
+				assert.Equal(t, iconActive, icon, "expected active icon")
+			}
+		})
+	}
+}
+
+func TestGetStatusText_ArchiveCandidateCriteria(t *testing.T) {
+	// Same tests as icon but for text
+	tests := []struct {
+		name        string
+		repo        github.Repository
+		isCandidate bool
+	}{
+		{
+			name:        "old repo with no engagement is candidate",
+			repo:        testutil.NewTestRepo(testutil.WithDaysInactive(400), testutil.WithStars(0), testutil.WithForks(0)),
+			isCandidate: true,
+		},
+		{
+			name:        "recent repo with engagement is not candidate",
+			repo:        testutil.NewTestRepo(testutil.WithDaysInactive(100), testutil.WithStars(5)),
+			isCandidate: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text := getStatusText(tt.repo)
+			if tt.isCandidate {
+				assert.Equal(t, "Candidate", text)
+			} else {
+				assert.Equal(t, "Active", text)
+			}
 		})
 	}
 }
