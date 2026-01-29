@@ -4,7 +4,10 @@
 name: Auto Tag
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
     branches:
       - main
 
@@ -15,14 +18,17 @@ jobs:
   tag:
     name: Create Version Tag
     runs-on: ubuntu-latest
-    # Only run if the commit message doesn't already indicate a release
-    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    # Only run if CI passed and commit message doesn't indicate a release
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'chore(release):')
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Bump version and push tag
         id: tag
@@ -32,6 +38,7 @@ jobs:
           default_bump: patch
           tag_prefix: ""
           release_branches: main
+          commit_sha: ${{ github.event.workflow_run.head_sha }}
           custom_release_rules: |
             feat:minor:Features,
             fix:patch:Bug Fixes,
