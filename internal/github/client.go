@@ -121,6 +121,36 @@ func (c *Client) ArchiveRepository(owner, name string) error {
 	return nil
 }
 
+// UnarchiveRepository unarchives the specified repository.
+func (c *Client) UnarchiveRepository(owner, name string) error {
+	if owner == "" || name == "" {
+		return fmt.Errorf("owner and name cannot be empty")
+	}
+
+	repoFullName := owner + "/" + name
+	slog.Debug("executing gh repo unarchive",
+		"component", "github",
+		"command", "gh repo unarchive "+repoFullName+" --yes",
+	)
+
+	output, err := c.executor.Execute("gh", "repo", "unarchive", repoFullName, "--yes")
+	if err != nil {
+		slog.Debug("gh repo unarchive failed",
+			"component", "github",
+			"repo", repoFullName,
+			"err", err,
+			"output", string(output),
+		)
+		return c.wrapError(err, output, "unarchiving repository %s", repoFullName)
+	}
+
+	slog.Debug("gh repo unarchive succeeded",
+		"component", "github",
+		"repo", repoFullName,
+	)
+	return nil
+}
+
 // FetchReadme fetches the README content for the specified repository.
 // Returns an empty string (not an error) if no README exists.
 func (c *Client) FetchReadme(owner, name string) (string, error) {

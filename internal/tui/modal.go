@@ -28,7 +28,7 @@ type archiveState struct {
 	errors    []error
 }
 
-// renderConfirmModal renders the archive confirmation modal.
+// renderConfirmModal renders the archive/unarchive confirmation modal.
 func (m Model) renderConfirmModal() string {
 	// Get marked repos
 	var markedRepos []github.Repository
@@ -40,17 +40,28 @@ func (m Model) renderConfirmModal() string {
 
 	count := len(markedRepos)
 	if count == 0 {
-		return m.styles.ModalBorder.Render("No repositories marked for archive")
+		action := "archive"
+		if m.archiveMode == "unarchive" {
+			action = "unarchive"
+		}
+		return m.styles.ModalBorder.Render(fmt.Sprintf("No repositories marked for %s", action))
 	}
 
 	// Build modal content
 	var lines []string
 
-	// Header
-	lines = append(lines, m.styles.ModalTitle.Render("Archive Confirmation"))
-	lines = append(lines, strings.Repeat("-", 40))
-	lines = append(lines, "")
-	lines = append(lines, fmt.Sprintf("You are about to archive %d repo%s:", count, pluralize(count)))
+	// Header - varies based on archiveMode
+	if m.archiveMode == "unarchive" {
+		lines = append(lines, m.styles.ModalTitle.Render("Unarchive Confirmation"))
+		lines = append(lines, strings.Repeat("-", 40))
+		lines = append(lines, "")
+		lines = append(lines, fmt.Sprintf("You are about to unarchive %d repo%s:", count, pluralize(count)))
+	} else {
+		lines = append(lines, m.styles.ModalTitle.Render("Archive Confirmation"))
+		lines = append(lines, strings.Repeat("-", 40))
+		lines = append(lines, "")
+		lines = append(lines, fmt.Sprintf("You are about to archive %d repo%s:", count, pluralize(count)))
+	}
 	lines = append(lines, "")
 
 	// List first N repos
@@ -70,8 +81,7 @@ func (m Model) renderConfirmModal() string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, "This action is reversible via GitHub")
-	lines = append(lines, "web UI or gh CLI.")
+	lines = append(lines, "This action is reversible.")
 	lines = append(lines, "")
 	lines = append(lines, m.styles.HelpKey.Render("Continue? [Y/n]"))
 
@@ -156,6 +166,62 @@ func archiveNextRepo(client *github.Client, repos []github.Repository, current i
 			state.errors = append(state.errors, fmt.Errorf("%s: %w", repo.FullName(), err))
 		} else {
 			slog.Debug("archive succeeded",
+				"component", "tui",
+				"repo", repo.FullName(),
+			)
+			state.succeeded++
+		}
+
+		return ArchiveProgressMsg{
+			Current:  current + 1,
+			Total:    len(repos),
+			RepoName: repo.FullName(),
+			Err:      err,
+		}
+	}
+}
+
+// unarchiveNextRepo returns a command to unarchive the next repository in the queue.
+func unarchiveNextRepo(client *github.Client, repos []github.Repository, current int, state *archiveState) tea.Cmd {
+	slog.Debug("unarchiveNextRepo called",
+		"component", "tui",
+		"current", current,
+		"totalRepos", len(repos),
+	)
+
+	return func() tea.Msg {
+		if current >= len(repos) {
+			slog.Debug("unarchive queue exhausted, returning ArchiveCompleteMsg",
+				"component", "tui",
+				"succeeded", state.succeeded,
+				"failed", state.failed,
+			)
+			return ArchiveCompleteMsg{
+				Succeeded: state.succeeded,
+				Failed:    state.failed,
+				Errors:    state.errors,
+			}
+		}
+
+		repo := repos[current]
+		slog.Debug("unarchiving repository",
+			"component", "tui",
+			"repo", repo.FullName(),
+			"index", current,
+		)
+
+		err := client.UnarchiveRepository(repo.Owner, repo.Name)
+
+		if err != nil {
+			slog.Debug("unarchive failed",
+				"component", "tui",
+				"repo", repo.FullName(),
+				"err", err,
+			)
+			state.failed++
+			state.errors = append(state.errors, fmt.Errorf("%s: %w", repo.FullName(), err))
+		} else {
+			slog.Debug("unarchive succeeded",
 				"component", "tui",
 				"repo", repo.FullName(),
 			)

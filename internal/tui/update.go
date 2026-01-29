@@ -39,37 +39,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			"total", msg.Total,
 			"repoName", msg.RepoName,
 			"err", msg.Err,
+			"archiveMode", m.archiveMode,
 		)
 		m.archiveProgress = msg.Current
 		m.archiveTotal = msg.Total
 		if msg.Err != nil {
 			m.lastError = msg.Err
 		} else if msg.RepoName != "" {
-			// Archive succeeded - update the repo's IsArchived field
-			m.markRepoAsArchived(msg.RepoName)
+			// Operation succeeded - update the repo's IsArchived field based on mode
+			if m.archiveMode == "unarchive" {
+				m.markRepoAsUnarchived(msg.RepoName)
+			} else {
+				m.markRepoAsArchived(msg.RepoName)
+			}
 		}
 		// Continue to the next repo if there are more
 		if m.archiveState != nil && msg.Current < msg.Total {
 			slog.Debug("chaining to next repo",
 				"component", "tui",
 				"nextIndex", msg.Current,
+				"archiveMode", m.archiveMode,
 			)
+			if m.archiveMode == "unarchive" {
+				return m, unarchiveNextRepo(m.client, m.archiveState.repos, msg.Current, m.archiveState)
+			}
 			return m, archiveNextRepo(m.client, m.archiveState.repos, msg.Current, m.archiveState)
 		}
 		// All repos processed - send completion message.
 		//
-		// Archive completion logic:
-		// The archiveNextRepo command processes one repo at a time and sends an ArchiveProgressMsg
-		// when done. The msg.Current field indicates how many repos have been processed so far.
-		// When msg.Current >= msg.Total, all repos have been processed, so we emit an
-		// ArchiveCompleteMsg to transition out of archiving state. This pattern ensures the
-		// completion message is sent exactly once, after the final repo is processed, preventing
-		// the archive operation from hanging indefinitely.
+		// Archive/unarchive completion logic:
+		// The archiveNextRepo/unarchiveNextRepo command processes one repo at a time and sends
+		// an ArchiveProgressMsg when done. The msg.Current field indicates how many repos have
+		// been processed so far. When msg.Current >= msg.Total, all repos have been processed,
+		// so we emit an ArchiveCompleteMsg to transition out of archiving state. This pattern
+		// ensures the completion message is sent exactly once, after the final repo is processed,
+		// preventing the operation from hanging indefinitely.
 		if m.archiveState != nil && msg.Current >= msg.Total {
-			slog.Debug("archive operation complete, sending ArchiveCompleteMsg",
+			slog.Debug("archive/unarchive operation complete, sending ArchiveCompleteMsg",
 				"component", "tui",
 				"succeeded", m.archiveState.succeeded,
 				"failed", m.archiveState.failed,
+				"archiveMode", m.archiveMode,
 			)
 			return m, func() tea.Msg {
 				return ArchiveCompleteMsg{
@@ -83,15 +93,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.archiving = false
 		m.archiveProgress = 0
 		m.archiveTotal = 0
+		archiveMode := m.archiveMode // Save before clearing state
 		m.archiveState = nil
-		// Clear marks for successfully archived repos and update status message
+		// Clear marks for successfully archived/unarchived repos and update status message
 		if msg.Succeeded > 0 {
 			m.clearArchivedMarks()
 		}
-		if msg.Failed > 0 {
-			m.statusMessage = fmt.Sprintf("Archive completed: %d succeeded, %d failed", msg.Succeeded, msg.Failed)
+		if archiveMode == "unarchive" {
+			if msg.Failed > 0 {
+				m.statusMessage = fmt.Sprintf("Unarchive completed: %d succeeded, %d failed", msg.Succeeded, msg.Failed)
+			} else {
+				m.statusMessage = fmt.Sprintf("Successfully unarchived %d repo%s", msg.Succeeded, pluralize(msg.Succeeded))
+			}
 		} else {
-			m.statusMessage = fmt.Sprintf("Successfully archived %d repo%s", msg.Succeeded, pluralize(msg.Succeeded))
+			if msg.Failed > 0 {
+				m.statusMessage = fmt.Sprintf("Archive completed: %d succeeded, %d failed", msg.Succeeded, msg.Failed)
+			} else {
+				m.statusMessage = fmt.Sprintf("Successfully archived %d repo%s", msg.Succeeded, pluralize(msg.Succeeded))
+			}
 		}
 		m.RefreshFilteredRepos()
 	case FabricResultMsg:
@@ -269,18 +288,25 @@ func (m Model) handleLanguageModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleConfirmModalKeys handles key input for the archive confirmation modal.
+// handleConfirmModalKeys handles key input for the archive/unarchive confirmation modal.
 func (m Model) handleConfirmModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "Y", "y", "enter":
-		// Confirm archive operation
+		// Confirm archive/unarchive operation
 		m.activeModal = ModalNone
+		if m.archiveMode == "unarchive" {
+			return m, m.unarchiveMarkedRepos()
+		}
 		return m, m.archiveMarkedRepos()
 
 	case "N", "n", "esc", "q":
-		// Cancel archive operation
+		// Cancel archive/unarchive operation
 		m.activeModal = ModalNone
-		m.statusMessage = "Archive cancelled"
+		if m.archiveMode == "unarchive" {
+			m.statusMessage = "Unarchive cancelled"
+		} else {
+			m.statusMessage = "Archive cancelled"
+		}
 		return m, nil
 	}
 
@@ -350,9 +376,31 @@ func (m Model) handleMainViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Filter keys
 	case "a":
 		// 'a' has dual purpose:
-		// - When repos are marked: open confirm modal for archive action
+		// - When repos are marked: open confirm modal for archive/unarchive action
 		// - When no repos are marked: set filter to FilterAll
 		if len(m.marked) > 0 {
+			// Determine if we're archiving or unarchiving based on marked repos
+			markedRepos := m.getMarkedRepos()
+			allArchived := true
+			allUnarchived := true
+			for _, repo := range markedRepos {
+				if repo.IsArchived {
+					allUnarchived = false
+				} else {
+					allArchived = false
+				}
+			}
+
+			if allArchived {
+				m.archiveMode = "unarchive"
+			} else if allUnarchived {
+				m.archiveMode = "archive"
+			} else {
+				// Mixed state - show error
+				m.statusMessage = "Cannot mix archived and unarchived repos"
+				return m, nil
+			}
+
 			m.activeModal = ModalConfirm
 			return m, nil
 		}
@@ -575,6 +623,54 @@ func (m *Model) archiveMarkedRepos() tea.Cmd {
 	return archiveNextRepo(m.client, toArchive, 0, m.archiveState)
 }
 
+// unarchiveMarkedRepos returns a command to unarchive all marked repositories.
+func (m *Model) unarchiveMarkedRepos() tea.Cmd {
+	slog.Debug("unarchiveMarkedRepos called",
+		"component", "tui",
+		"markedCount", len(m.marked),
+	)
+
+	if len(m.marked) == 0 {
+		slog.Debug("no repos marked, returning nil",
+			"component", "tui",
+		)
+		return nil
+	}
+
+	// Collect marked repos
+	toUnarchive := m.getMarkedRepos()
+	if len(toUnarchive) == 0 {
+		slog.Debug("getMarkedRepos returned empty, returning nil",
+			"component", "tui",
+		)
+		return nil
+	}
+
+	// Log the repos being unarchived
+	repoNames := make([]string, len(toUnarchive))
+	for i, repo := range toUnarchive {
+		repoNames[i] = repo.FullName()
+	}
+	slog.Debug("starting unarchive operation",
+		"component", "tui",
+		"repoCount", len(toUnarchive),
+		"repos", repoNames,
+	)
+
+	m.archiving = true
+	m.archiveTotal = len(toUnarchive)
+	m.archiveProgress = 0
+	m.archiveState = &archiveState{
+		repos:     toUnarchive,
+		succeeded: 0,
+		failed:    0,
+		errors:    nil,
+	}
+
+	// Start unarchiving the first repo
+	return unarchiveNextRepo(m.client, toUnarchive, 0, m.archiveState)
+}
+
 // exportMarkedRepos returns a command to export marked repositories.
 func (m *Model) exportMarkedRepos() tea.Cmd {
 	if len(m.marked) == 0 {
@@ -600,23 +696,45 @@ func (m *Model) markRepoAsArchived(fullName string) {
 	}
 }
 
-// clearArchivedMarks removes marks from repos that have been archived.
+// markRepoAsUnarchived updates a repo's IsArchived field to false in the model.
+func (m *Model) markRepoAsUnarchived(fullName string) {
+	for i := range m.repos {
+		if m.repos[i].FullName() == fullName {
+			m.repos[i].IsArchived = false
+			break
+		}
+	}
+}
+
+// clearArchivedMarks removes marks from repos that have been archived or unarchived.
 // It also updates the database: removes marks and updates is_archived flag.
+// For archive mode: clears marks from repos where IsArchived == true
+// For unarchive mode: clears marks from repos where IsArchived == false
 func (m *Model) clearArchivedMarks() {
 	for key := range m.marked {
-		// Check if this repo is now archived
 		for i, repo := range m.repos {
-			if repo.FullName() == key && repo.IsArchived {
+			if repo.FullName() != key {
+				continue
+			}
+			// For archive mode, check if repo is now archived
+			// For unarchive mode, check if repo is now unarchived
+			shouldClear := false
+			if m.archiveMode == "unarchive" {
+				shouldClear = !repo.IsArchived
+			} else {
+				shouldClear = repo.IsArchived
+			}
+
+			if shouldClear {
 				delete(m.marked, key)
 				// Remove from database marked_repos
 				if m.store != nil {
 					_ = m.store.RemoveMarkedRepo(m.owner, repo.Name)
 					// Update is_archived in repositories table
-					m.repos[i].IsArchived = true
 					_ = m.store.UpdateRepository(m.repos[i])
 				}
-				break
 			}
+			break
 		}
 	}
 }

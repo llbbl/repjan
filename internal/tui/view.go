@@ -306,9 +306,13 @@ func (m Model) renderFooter() string {
 func (m Model) renderStatusBar() string {
 	var parts []string
 
-	// Show archiving progress if in progress (takes priority)
+	// Show archiving/unarchiving progress if in progress (takes priority)
 	if m.archiving {
-		archiveStatus := fmt.Sprintf("Archiving %d/%d repositories...", m.archiveProgress, m.archiveTotal)
+		action := "Archiving"
+		if m.archiveMode == "unarchive" {
+			action = "Unarchiving"
+		}
+		archiveStatus := fmt.Sprintf("%s %d/%d repositories...", action, m.archiveProgress, m.archiveTotal)
 		parts = append(parts, m.styles.Warning.Render(archiveStatus))
 	} else if m.syncing {
 		// Show syncing indicator

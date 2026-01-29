@@ -93,6 +93,7 @@ type Model struct {
 	archiveProgress int
 	archiveTotal    int
 	archiveState    *archiveState       // tracks ongoing archive operation
+	archiveMode     string              // "archive" or "unarchive" mode for modal
 	syncing         bool                // whether a sync operation is in progress
 	lastSyncTime    time.Time           // when repos were last synced from GitHub
 	usingCache      bool                // whether we're showing cached data
