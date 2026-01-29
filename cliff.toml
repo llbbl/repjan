@@ -36,5 +36,5 @@ commit_parsers = [
     { body = ".*security", group = "Security" },
 ]
 filter_commits = false
-tag_pattern = "v[0-9].*"
+tag_pattern = "[0-9]+\\.[0-9]+\\.[0-9]+"
 sort_commits = "newest"
