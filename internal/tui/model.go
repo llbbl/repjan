@@ -61,8 +61,9 @@ type Model struct {
 	store         *store.Store // database store for persistence
 
 	// UI State
-	cursor int
-	marked map[string]bool // key: owner/name
+	cursor         int
+	viewportOffset int             // scroll offset for table pagination
+	marked         map[string]bool // key: owner/name
 
 	// Filters
 	currentFilter  Filter
@@ -161,8 +162,8 @@ func NewModel(repos []github.Repository, owner string, client *github.Client, fa
 		client:        client,
 		marked:        make(map[string]bool),
 		currentFilter: FilterAll,
-		sortField:     SortName,
-		sortAscending: true,
+		sortField:     SortActivity,
+		sortAscending: true, // oldest first
 		activeModal:   ModalNone,
 		fabricEnabled: fabricEnabled,
 		fabricPath:    fabricPath,

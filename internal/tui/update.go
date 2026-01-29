@@ -5,10 +5,16 @@ package tui
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// reservedRows is the number of rows reserved for UI chrome (not available for table content).
+// This includes: header line, filter line, sort bar, table header, footer keybindings,
+// status bar, and vertical margins/padding.
+const reservedRows = 8
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -27,6 +33,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.RefreshFilteredRepos()
 		}
 	case ArchiveProgressMsg:
+		slog.Debug("received ArchiveProgressMsg",
+			"component", "tui",
+			"current", msg.Current,
+			"total", msg.Total,
+			"repoName", msg.RepoName,
+			"err", msg.Err,
+		)
 		m.archiveProgress = msg.Current
 		m.archiveTotal = msg.Total
 		if msg.Err != nil {
@@ -37,7 +50,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Continue to the next repo if there are more
 		if m.archiveState != nil && msg.Current < msg.Total {
+			slog.Debug("chaining to next repo",
+				"component", "tui",
+				"nextIndex", msg.Current,
+			)
 			return m, archiveNextRepo(m.client, m.archiveState.repos, msg.Current, m.archiveState)
+		}
+		// All repos processed - send completion message.
+		//
+		// Archive completion logic:
+		// The archiveNextRepo command processes one repo at a time and sends an ArchiveProgressMsg
+		// when done. The msg.Current field indicates how many repos have been processed so far.
+		// When msg.Current >= msg.Total, all repos have been processed, so we emit an
+		// ArchiveCompleteMsg to transition out of archiving state. This pattern ensures the
+		// completion message is sent exactly once, after the final repo is processed, preventing
+		// the archive operation from hanging indefinitely.
+		if m.archiveState != nil && msg.Current >= msg.Total {
+			slog.Debug("archive operation complete, sending ArchiveCompleteMsg",
+				"component", "tui",
+				"succeeded", m.archiveState.succeeded,
+				"failed", m.archiveState.failed,
+			)
+			return m, func() tea.Msg {
+				return ArchiveCompleteMsg{
+					Succeeded: m.archiveState.succeeded,
+					Failed:    m.archiveState.failed,
+					Errors:    m.archiveState.errors,
+				}
+			}
 		}
 	case ArchiveCompleteMsg:
 		m.archiving = false
@@ -249,28 +289,55 @@ func (m Model) handleConfirmModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleMainViewKeys handles key input in the main repository list view.
 func (m Model) handleMainViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	visibleRows := m.getVisibleRows()
+
 	switch msg.String() {
 	// Navigation keys
 	case "j", "down":
+		if len(m.filteredRepos) == 0 {
+			return m, nil
+		}
 		m.cursor = min(m.cursor+1, len(m.filteredRepos)-1)
-		if m.cursor < 0 {
-			m.cursor = 0
+		// Scroll down if cursor goes below visible area
+		if m.cursor >= m.viewportOffset+visibleRows {
+			m.viewportOffset = m.cursor - visibleRows + 1
 		}
 		return m, nil
 
 	case "k", "up":
 		m.cursor = max(m.cursor-1, 0)
+		// Scroll up if cursor goes above visible area
+		if m.cursor < m.viewportOffset {
+			m.viewportOffset = m.cursor
+		}
+		return m, nil
+
+	case "pgdown", "ctrl+d":
+		// Page down - move cursor and viewport by visible rows
+		if len(m.filteredRepos) == 0 {
+			return m, nil
+		}
+		m.cursor = min(m.cursor+visibleRows, len(m.filteredRepos)-1)
+		m.viewportOffset = min(m.viewportOffset+visibleRows, max(0, len(m.filteredRepos)-visibleRows))
+		return m, nil
+
+	case "pgup", "ctrl+u":
+		// Page up - move cursor and viewport by visible rows
+		m.cursor = max(m.cursor-visibleRows, 0)
+		m.viewportOffset = max(m.viewportOffset-visibleRows, 0)
 		return m, nil
 
 	case "g":
 		// Go to top
 		m.cursor = 0
+		m.viewportOffset = 0
 		return m, nil
 
 	case "G":
 		// Go to bottom
 		if len(m.filteredRepos) > 0 {
 			m.cursor = len(m.filteredRepos) - 1
+			m.viewportOffset = max(0, len(m.filteredRepos)-visibleRows)
 		}
 		return m, nil
 
@@ -462,15 +529,37 @@ func (m *Model) applySearchFilter() {
 
 // archiveMarkedRepos returns a command to archive all marked repositories.
 func (m *Model) archiveMarkedRepos() tea.Cmd {
+	slog.Debug("archiveMarkedRepos called",
+		"component", "tui",
+		"markedCount", len(m.marked),
+	)
+
 	if len(m.marked) == 0 {
+		slog.Debug("no repos marked, returning nil",
+			"component", "tui",
+		)
 		return nil
 	}
 
 	// Collect marked repos
 	toArchive := m.getMarkedRepos()
 	if len(toArchive) == 0 {
+		slog.Debug("getMarkedRepos returned empty, returning nil",
+			"component", "tui",
+		)
 		return nil
 	}
+
+	// Log the repos being archived
+	repoNames := make([]string, len(toArchive))
+	for i, repo := range toArchive {
+		repoNames[i] = repo.FullName()
+	}
+	slog.Debug("starting archive operation",
+		"component", "tui",
+		"repoCount", len(toArchive),
+		"repos", repoNames,
+	)
 
 	m.archiving = true
 	m.archiveTotal = len(toArchive)
@@ -546,4 +635,13 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// getVisibleRows returns the number of visible rows in the table viewport.
+func (m Model) getVisibleRows() int {
+	visibleRows := m.height - reservedRows
+	if visibleRows < 1 {
+		visibleRows = 5
+	}
+	return visibleRows
 }

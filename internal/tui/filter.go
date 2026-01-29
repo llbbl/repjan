@@ -80,7 +80,8 @@ func sortRepos(repos []github.Repository, field SortField, ascending bool) []git
 		case SortName:
 			less = strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
 		case SortActivity:
-			less = result[i].DaysSinceActivity < result[j].DaysSinceActivity
+			// Invert: ascending = oldest first (most days since activity)
+			less = result[i].DaysSinceActivity > result[j].DaysSinceActivity
 		case SortStars:
 			less = result[i].StargazerCount < result[j].StargazerCount
 		case SortLanguage:
@@ -175,9 +176,13 @@ func (m *Model) RefreshFilteredRepos() {
 	// Then sort
 	m.filteredRepos = sortRepos(filtered, m.sortField, m.sortAscending)
 
-	// Reset cursor if it's out of bounds
+	// Reset cursor and viewport offset if out of bounds
 	if m.cursor >= len(m.filteredRepos) {
 		m.cursor = max(0, len(m.filteredRepos)-1)
+	}
+	// Reset viewport offset to ensure cursor is visible
+	if m.viewportOffset > m.cursor {
+		m.viewportOffset = m.cursor
 	}
 }
 

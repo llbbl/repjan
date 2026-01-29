@@ -275,7 +275,7 @@ func TestSortRepos(t *testing.T) {
 			wantLast:  "Zebra",
 		},
 		{
-			name: "sort by activity ascending (most recent first)",
+			name: "sort by activity ascending (oldest first)",
 			repos: []github.Repository{
 				testutil.NewTestRepo(testutil.WithName("old"), testutil.WithDaysInactive(100)),
 				testutil.NewTestRepo(testutil.WithName("recent"), testutil.WithDaysInactive(10)),
@@ -283,11 +283,11 @@ func TestSortRepos(t *testing.T) {
 			},
 			field:     SortActivity,
 			ascending: true,
-			wantFirst: "recent",
-			wantLast:  "ancient",
+			wantFirst: "ancient",
+			wantLast:  "recent",
 		},
 		{
-			name: "sort by activity descending (oldest first)",
+			name: "sort by activity descending (most recent first)",
 			repos: []github.Repository{
 				testutil.NewTestRepo(testutil.WithName("old"), testutil.WithDaysInactive(100)),
 				testutil.NewTestRepo(testutil.WithName("recent"), testutil.WithDaysInactive(10)),
@@ -295,8 +295,8 @@ func TestSortRepos(t *testing.T) {
 			},
 			field:     SortActivity,
 			ascending: false,
-			wantFirst: "ancient",
-			wantLast:  "recent",
+			wantFirst: "recent",
+			wantLast:  "ancient",
 		},
 		{
 			name: "sort by stars ascending",
@@ -718,23 +718,25 @@ func TestToggleShowArchived_RefreshesFilteredRepos(t *testing.T) {
 	assert.Equal(t, "active", m.filteredRepos[0].Name)
 }
 
-// TestRenderPrivateWarning_ShowsWhenPrivateVisible verifies the warning banner
-// behavior based on private repo visibility.
-func TestRenderPrivateWarning_ShowsWhenPrivateVisible(t *testing.T) {
+// TestRenderSortBar_PrivateWarning verifies the warning banner behavior
+// in renderSortBar based on private repo visibility.
+// Note: The private warning is now rendered within renderSortBar() as a workaround
+// for rendering issues with separate sections.
+func TestRenderSortBar_PrivateWarning(t *testing.T) {
 	tests := []struct {
 		name        string
 		showPrivate bool
-		wantEmpty   bool
+		wantWarning bool
 	}{
 		{
 			name:        "warning shown when private repos visible",
 			showPrivate: true,
-			wantEmpty:   false,
+			wantWarning: true,
 		},
 		{
 			name:        "warning hidden when private repos hidden",
 			showPrivate: false,
-			wantEmpty:   true,
+			wantWarning: false,
 		},
 	}
 
@@ -746,13 +748,14 @@ func TestRenderPrivateWarning_ShowsWhenPrivateVisible(t *testing.T) {
 				styles:      DefaultStyles(),
 			}
 
-			result := m.renderPrivateWarning()
+			result := m.renderSortBar()
 
-			if tt.wantEmpty {
-				assert.Empty(t, result, "warning should be empty when private repos hidden")
+			if tt.wantWarning {
+				assert.Contains(t, result, "PRIVATE REPOS VISIBLE",
+					"warning should be shown when private repos visible")
 			} else {
-				assert.NotEmpty(t, result, "warning should be shown when private repos visible")
-				assert.Contains(t, result, "PRIVATE REPOS VISIBLE")
+				assert.NotContains(t, result, "PRIVATE REPOS VISIBLE",
+					"warning should be hidden when private repos hidden")
 			}
 		})
 	}

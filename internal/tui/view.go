@@ -18,30 +18,18 @@ func (m Model) View() string {
 		return m.styles.HeaderInfo.Render("Loading repositories...")
 	}
 
-	// Handle archiving state
-	if m.archiving {
-		return m.styles.HeaderInfo.Render(
-			fmt.Sprintf("Archiving %d/%d...", m.archiveProgress, m.archiveTotal),
-		)
-	}
+	// Handle archiving state - show full UI with progress indicator instead of blank screen
+	// The progress indicator will be shown in the status bar
 
 	// Build main view
+	// Note: renderSortBar() includes header, warning banner, and filter info
+	// as a workaround for rendering issues with separate sections
 	sections := []string{
-		m.renderHeader(),
-	}
-
-	// Add private warning banner right after header when private repos are visible
-	if m.showPrivate {
-		sections = append(sections, m.renderPrivateWarning())
-	}
-
-	sections = append(sections,
-		m.renderFilters(),
 		m.renderSortBar(),
 		m.renderTableHeader(),
 		m.renderTableBody(),
 		m.renderFooter(),
-	)
+	}
 
 	// Add error message if present
 	if m.lastError != nil {
@@ -58,7 +46,8 @@ func (m Model) View() string {
 		sections = append([]string{sections[0], searchBar}, sections[1:]...)
 	}
 
-	view := lipgloss.JoinVertical(lipgloss.Left, sections...)
+	// Join with explicit newlines to ensure all sections show
+	view := strings.Join(sections, "\n")
 
 	// Render modal overlay if active
 	if m.activeModal != ModalNone {
@@ -81,124 +70,6 @@ func (m Model) View() string {
 	return view
 }
 
-// renderHeader renders the header bar with title and stats.
-func (m Model) renderHeader() string {
-	markedCount := len(m.marked)
-	totalCount := len(m.filteredRepos)
-
-	title := m.styles.HeaderTitle.Render("repjan")
-	info := m.styles.HeaderInfo.Render(
-		fmt.Sprintf(" - %s (%d repositories, %d marked)", m.owner, totalCount, markedCount),
-	)
-	helpHint := m.styles.HelpKey.Render("[? Help]")
-
-	headerContent := lipgloss.JoinHorizontal(lipgloss.Center, title, info)
-
-	// Add spacing between header content and help hint
-	availableWidth := m.width - lipgloss.Width(headerContent) - lipgloss.Width(helpHint) - 4
-	if availableWidth < 0 {
-		availableWidth = 1
-	}
-	spacing := strings.Repeat(" ", availableWidth)
-
-	fullHeader := lipgloss.JoinHorizontal(lipgloss.Center, headerContent, spacing, helpHint)
-
-	// Use warning-tinted header when private repos are visible
-	if m.showPrivate {
-		return m.styles.PrivateHeaderTint.Width(m.width).Render(fullHeader)
-	}
-	return m.styles.Header.Width(m.width).Render(fullHeader)
-}
-
-// renderPrivateWarning renders a prominent warning banner when private repos are visible.
-func (m Model) renderPrivateWarning() string {
-	if !m.showPrivate {
-		return ""
-	}
-
-	warningText := "⚠ PRIVATE REPOS VISIBLE - Screenshots may expose sensitive data ⚠"
-
-	// Center the warning text within the available width
-	textWidth := lipgloss.Width(warningText)
-	availableWidth := m.width - 4 // Account for padding and borders
-
-	if availableWidth > textWidth {
-		leftPadding := (availableWidth - textWidth) / 2
-		warningText = strings.Repeat(" ", leftPadding) + warningText + strings.Repeat(" ", availableWidth-textWidth-leftPadding)
-	}
-
-	return m.styles.PrivateWarningBanner.Width(m.width).Render(warningText)
-}
-
-// renderFilters renders the filter bar with available filter options.
-func (m Model) renderFilters() string {
-	// Content filters (work on top of visibility)
-	filters := []struct {
-		key    string
-		label  string
-		filter Filter
-	}{
-		{"A", "All", FilterAll},
-		{"O", "Old", FilterOld},
-		{"N", "No Stars", FilterNoStars},
-		{"F", "Forks", FilterForks},
-	}
-
-	var parts []string
-
-	// Show visibility state first (privacy-safe indicator)
-	visibilityLabel := m.getVisibilityLabel()
-	parts = append(parts, m.styles.ActiveFilter.Render(visibilityLabel))
-	parts = append(parts, " | ")
-
-	parts = append(parts, "Filters: ")
-
-	for i, f := range filters {
-		var rendered string
-		keyLabel := fmt.Sprintf("[%s]%s", f.key, f.label)
-
-		if m.currentFilter == f.filter {
-			rendered = m.styles.ActiveFilter.Render(keyLabel)
-		} else {
-			rendered = m.styles.HelpDesc.Render(keyLabel)
-		}
-
-		parts = append(parts, rendered)
-		if i < len(filters)-1 {
-			parts = append(parts, " ")
-		}
-	}
-
-	// Add language filter if set
-	if m.languageFilter != "" {
-		langLabel := fmt.Sprintf(" [L]anguage:%s", m.languageFilter)
-		parts = append(parts, m.styles.ActiveFilter.Render(langLabel))
-	} else {
-		parts = append(parts, m.styles.HelpDesc.Render(" [L]anguage"))
-	}
-
-	// Add visibility toggles section
-	parts = append(parts, " | ")
-
-	// Private visibility toggle - use bold red warning when active
-	if m.showPrivate {
-		parts = append(parts, m.styles.PrivateIndicator.Render("[P]+Private ⚠"))
-	} else {
-		parts = append(parts, m.styles.HelpDesc.Render("[P]rivate"))
-	}
-
-	parts = append(parts, " ")
-
-	// Archived visibility toggle
-	if m.showArchived {
-		parts = append(parts, m.styles.ActiveFilter.Render("[X]+Archived"))
-	} else {
-		parts = append(parts, m.styles.HelpDesc.Render("[X]Archived"))
-	}
-
-	return m.styles.FilterBar.Render(strings.Join(parts, ""))
-}
-
 // getVisibilityLabel returns a human-readable label for the current visibility state.
 func (m Model) getVisibilityLabel() string {
 	switch {
@@ -214,7 +85,35 @@ func (m Model) getVisibilityLabel() string {
 }
 
 // renderSortBar renders the sort bar with available sort options.
+// Also includes header, filter, and warning info since separate sections weren't rendering
 func (m Model) renderSortBar() string {
+	markedCount := len(m.marked)
+	totalCount := len(m.filteredRepos)
+
+	// Build header line
+	headerLine := fmt.Sprintf("repjan - %s (%d repos, %d marked)  [? Help]", m.owner, totalCount, markedCount)
+
+	// Build warning line if private repos visible - with prominent styling
+	warningLine := ""
+	if m.showPrivate {
+		warningText := "  ⚠️  PRIVATE REPOS VISIBLE - Screenshots may expose sensitive data  ⚠️  "
+		warningLine = m.styles.PrivateWarningBanner.Width(m.width).Render(warningText) + "\n"
+	}
+
+	// Build filter line
+	filterNames := map[Filter]string{FilterAll: "All", FilterOld: "Old", FilterNoStars: "NoStars", FilterForks: "Forks"}
+	privateStr := "[P]rivate"
+	if m.showPrivate {
+		// Style the PRIVATE indicator with bold red to make it obvious
+		privateStr = m.styles.PrivateIndicator.Render("[P]+PRIVATE!")
+	}
+	archivedStr := "[X]Archived"
+	if m.showArchived {
+		// Style with light blue to indicate archived repos are visible
+		archivedStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#87CEEB")).Bold(true).Render("[X]+Archived")
+	}
+	filterLine := fmt.Sprintf("%s | Filter: %s | %s %s", m.getVisibilityLabel(), filterNames[m.currentFilter], privateStr, archivedStr)
+
 	sortOptions := []struct {
 		key   string
 		label string
@@ -251,7 +150,10 @@ func (m Model) renderSortBar() string {
 		}
 	}
 
-	return m.styles.FilterBar.Render(strings.Join(parts, ""))
+	sortLine := strings.Join(parts, "")
+
+	// Combine all lines: header, warning (if any), filter, sort
+	return headerLine + "\n" + warningLine + filterLine + "\n" + sortLine
 }
 
 // renderTableHeader renders the table column headers.
@@ -278,24 +180,23 @@ func (m Model) renderTableHeader() string {
 
 // renderTableBody renders the repository table body.
 func (m Model) renderTableBody() string {
-	// Placeholder - will call table rendering in future task
 	if len(m.filteredRepos) == 0 {
 		return m.styles.HeaderInfo.Render("No repositories to display")
 	}
 
-	// Calculate visible rows based on height
-	// Reserve space for: header, filters, sort bar, table header, footer, margins
-	reservedRows := 8
+	// Calculate visible rows based on height using the package-level constant
 	visibleRows := m.height - reservedRows
 	if visibleRows < 1 {
 		visibleRows = 5
 	}
 
+	// Calculate start and end indices based on viewport offset
+	startIdx := m.viewportOffset
+	endIdx := min(startIdx+visibleRows, len(m.filteredRepos))
+
 	var rows []string
-	for i, repo := range m.filteredRepos {
-		if i >= visibleRows {
-			break
-		}
+	for i := startIdx; i < endIdx; i++ {
+		repo := m.filteredRepos[i]
 
 		// Determine row style
 		style := m.styles.TableRow
@@ -305,7 +206,15 @@ func (m Model) renderTableBody() string {
 
 		repoKey := fmt.Sprintf("%s/%s", repo.Owner, repo.Name)
 		if m.marked[repoKey] {
-			if i == m.cursor {
+			// When archiving is in progress, show archiving style for marked repos
+			if m.archiving {
+				if i == m.cursor {
+					// Combine selected and archiving styling
+					style = m.styles.ArchivingRow.Background(ColorPrimary)
+				} else {
+					style = m.styles.ArchivingRow
+				}
+			} else if i == m.cursor {
 				// Combine selected and marked styling
 				style = m.styles.SelectedRow.Foreground(ColorMarked)
 			} else {
@@ -359,9 +268,12 @@ func (m Model) renderFooter() string {
 		desc string
 	}{
 		{"j/k", "navigate"},
+		{"pgup/pgdn", "page"},
 		{"space", "mark"},
 		{"enter", "details"},
 		{"/", "search"},
+		{"p", "private"},
+		{"x", "archived"},
 		{"a", "archive marked"},
 		{"q", "quit"},
 	}
@@ -394,8 +306,12 @@ func (m Model) renderFooter() string {
 func (m Model) renderStatusBar() string {
 	var parts []string
 
-	// Show syncing indicator
-	if m.syncing {
+	// Show archiving progress if in progress (takes priority)
+	if m.archiving {
+		archiveStatus := fmt.Sprintf("Archiving %d/%d repositories...", m.archiveProgress, m.archiveTotal)
+		parts = append(parts, m.styles.Warning.Render(archiveStatus))
+	} else if m.syncing {
+		// Show syncing indicator
 		parts = append(parts, m.styles.HelpKey.Render("Syncing..."))
 	} else {
 		// Show last sync time

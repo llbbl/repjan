@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -97,11 +98,26 @@ func (c *Client) ArchiveRepository(owner, name string) error {
 	}
 
 	repoFullName := owner + "/" + name
+	slog.Debug("executing gh repo archive",
+		"component", "github",
+		"command", "gh repo archive "+repoFullName+" --yes",
+	)
+
 	output, err := c.executor.Execute("gh", "repo", "archive", repoFullName, "--yes")
 	if err != nil {
+		slog.Debug("gh repo archive failed",
+			"component", "github",
+			"repo", repoFullName,
+			"err", err,
+			"output", string(output),
+		)
 		return c.wrapError(err, output, "archiving repository %s", repoFullName)
 	}
 
+	slog.Debug("gh repo archive succeeded",
+		"component", "github",
+		"repo", repoFullName,
+	)
 	return nil
 }
 

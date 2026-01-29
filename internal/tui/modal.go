@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -116,8 +117,19 @@ func (m Model) startArchiveOperation() tea.Cmd {
 
 // archiveNextRepo returns a command to archive the next repository in the queue.
 func archiveNextRepo(client *github.Client, repos []github.Repository, current int, state *archiveState) tea.Cmd {
+	slog.Debug("archiveNextRepo called",
+		"component", "tui",
+		"current", current,
+		"totalRepos", len(repos),
+	)
+
 	return func() tea.Msg {
 		if current >= len(repos) {
+			slog.Debug("archive queue exhausted, returning ArchiveCompleteMsg",
+				"component", "tui",
+				"succeeded", state.succeeded,
+				"failed", state.failed,
+			)
 			return ArchiveCompleteMsg{
 				Succeeded: state.succeeded,
 				Failed:    state.failed,
@@ -126,12 +138,27 @@ func archiveNextRepo(client *github.Client, repos []github.Repository, current i
 		}
 
 		repo := repos[current]
+		slog.Debug("archiving repository",
+			"component", "tui",
+			"repo", repo.FullName(),
+			"index", current,
+		)
+
 		err := client.ArchiveRepository(repo.Owner, repo.Name)
 
 		if err != nil {
+			slog.Debug("archive failed",
+				"component", "tui",
+				"repo", repo.FullName(),
+				"err", err,
+			)
 			state.failed++
 			state.errors = append(state.errors, fmt.Errorf("%s: %w", repo.FullName(), err))
 		} else {
+			slog.Debug("archive succeeded",
+				"component", "tui",
+				"repo", repo.FullName(),
+			)
 			state.succeeded++
 		}
 

@@ -29,6 +29,12 @@ const (
 	ColorWarningBorder = lipgloss.Color("#FF0000") // Bright red border
 )
 
+// Archiving operation colors.
+const (
+	ColorArchivingBg   = lipgloss.Color("#8B4513") // Dark orange/brown background
+	ColorArchivingText = lipgloss.Color("#FFD700") // Gold text for archiving in progress
+)
+
 // Styles contains all lipgloss style definitions for the TUI.
 type Styles struct {
 	// Header styles
@@ -41,10 +47,11 @@ type Styles struct {
 	ActiveFilter lipgloss.Style
 
 	// Table styles
-	TableHeader lipgloss.Style
-	TableRow    lipgloss.Style
-	SelectedRow lipgloss.Style
-	MarkedRow   lipgloss.Style
+	TableHeader  lipgloss.Style
+	TableRow     lipgloss.Style
+	SelectedRow  lipgloss.Style
+	MarkedRow    lipgloss.Style
+	ArchivingRow lipgloss.Style // Row style for repos being archived
 
 	// Status indicators
 	StatusActive    lipgloss.Style
@@ -119,6 +126,12 @@ func DefaultStyles() Styles {
 
 		MarkedRow: lipgloss.NewStyle().
 			Foreground(ColorMarked).
+			Bold(true).
+			Padding(0, 1),
+
+		ArchivingRow: lipgloss.NewStyle().
+			Foreground(ColorArchivingText).
+			Background(ColorArchivingBg).
 			Bold(true).
 			Padding(0, 1),
 
