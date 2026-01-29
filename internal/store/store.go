@@ -449,7 +449,7 @@ type RepoChange struct {
 	ID            int64
 	Owner         string
 	RepoName      string
-	Action        string    // archived, marked, unmarked, deleted, synced
+	Action        string // archived, marked, unmarked, deleted, synced
 	PerformedAt   time.Time
 	PerformedBy   string // user, system, sync
 	PreviousState string // JSON string

@@ -23,8 +23,8 @@ func TestFormatRelativeTime(t *testing.T) {
 		{"yesterday", now.AddDate(0, 0, -1), "1 day ago"},
 		{"2 days ago", now.AddDate(0, 0, -2), "2 days ago"},
 		{"week ago", now.AddDate(0, 0, -7), "7 days ago"},
-		{"month ago", now.AddDate(0, -1, 0), "30 days ago"},   // approximately
-		{"year ago", now.AddDate(-1, 0, 0), "365 days ago"},   // approximately
+		{"month ago", now.AddDate(0, -1, 0), "30 days ago"},    // approximately
+		{"year ago", now.AddDate(-1, 0, 0), "365 days ago"},    // approximately
 		{"2 years ago", now.AddDate(-2, 0, 0), "730 days ago"}, // approximately
 		{"future date far", now.AddDate(1, 0, 0), "in the future"},
 	}

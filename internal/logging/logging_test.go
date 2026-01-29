@@ -49,13 +49,13 @@ func TestSetupLogger_JSONFormat(t *testing.T) {
 
 func TestSetupLogger_LogLevels(t *testing.T) {
 	tests := []struct {
-		name           string
-		configLevel    string
-		expectedSlog   slog.Level
-		debugVisible   bool
-		infoVisible    bool
-		warnVisible    bool
-		errorVisible   bool
+		name         string
+		configLevel  string
+		expectedSlog slog.Level
+		debugVisible bool
+		infoVisible  bool
+		warnVisible  bool
+		errorVisible bool
 	}{
 		{
 			name:         "debug level shows all messages",
