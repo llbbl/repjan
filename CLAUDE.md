@@ -39,7 +39,40 @@ bd sync               # Sync with git
 - **NEVER run git add/commit/push commands directly** - always use the commit-manager agent
 - Use the commit-manager agent for ALL version control operations (staging, commits, pushes, PRs)
 - If resuming the commit-manager agent fails (API error, concurrency issues), **start a new commit-manager agent** instead of falling back to direct git commands
-- **DO NOT override commit-manager's guidelines** - When calling commit-manager, describe the changes but do NOT specify commit message format, attribution lines, or Co-Authored-By. Let the agent follow its own markdown file guidelines (`~/.claude/agents/commit-manager.md`)
+- **DO NOT specify attribution lines or Co-Authored-By** - Let commit-manager follow its own guidelines for those
+
+
+## Commit Message Format (Conventional Commits)
+
+This project uses **Conventional Commits** for git-cliff changelog generation. When calling commit-manager, instruct it to use this format for the commit message:
+
+```
+<type>(<scope>): <short description>
+
+[optional body]
+```
+
+**Types:**
+- `feat` - New feature
+- `fix` - Bug fix
+- `docs` - Documentation only
+- `style` - Formatting, no code change
+- `refactor` - Code restructuring, no behavior change
+- `perf` - Performance improvement
+- `test` - Adding/updating tests
+- `chore` - Maintenance tasks
+- `ci` - CI/CD changes
+- `deps` - Dependency updates
+
+**Examples:**
+```
+feat(tui): add pagination with viewport scrolling
+fix(archive): send completion message when all repos processed
+docs: update README with installation instructions
+ci: add GitHub Actions release workflow
+```
+
+**When calling commit-manager**, include: "Use conventional commit format (type(scope): description)" but do NOT specify attribution or Co-Authored-By formatting.
 
 
 ## TUI Defaults

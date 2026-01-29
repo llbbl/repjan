@@ -9,8 +9,9 @@ A terminal user interface (TUI) tool for managing GitHub repositories at scale. 
 - **Archive Detection** - Automatically identifies archive candidates based on heuristics
 - **Batch Operations** - Mark and archive multiple repositories at once
 - **Search** - Real-time search filtering by repository name
-- **Fabric AI** - Optional AI-powered repository analysis (requires [Fabric](https://github.com/danielmiessler/fabric))
 - **Export** - Export marked repositories to JSON for documentation
+
+![Screenshot](./.github/screenshot.jpg)
 
 ## Installation
 
@@ -36,11 +37,6 @@ repjan
 # Audit an organization
 repjan --owner acme-corp
 
-# Enable Fabric AI analysis
-repjan --fabric
-
-# Specify custom Fabric path
-repjan --fabric --fabric-path ~/bin/fabric
 ```
 
 ## Keyboard Controls
@@ -81,12 +77,6 @@ repjan --fabric --fabric-path ~/bin/fabric
 | `Shift+U` | Unmark all |
 | `a` | Archive marked repos (when marked) |
 | `e` | Export marked to JSON |
-
-### Fabric AI (when enabled)
-| Key | Action |
-|-----|--------|
-| `i` | Analyze current repository |
-| `Shift+I` | Batch analyze marked repos |
 
 ## Archive Candidate Heuristics
 

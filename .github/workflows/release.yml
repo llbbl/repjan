@@ -1,0 +1,115 @@
+# SPDX-FileCopyrightText: 2026 Logan Lindquist Land
+# SPDX-License-Identifier: FSL-1.1-MIT
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact: repjan-linux-x64
+          - target: darwin-arm64
+            os: macos-latest
+            goos: darwin
+            goarch: arm64
+            artifact: repjan-darwin-arm64
+          - target: darwin-x64
+            os: macos-latest
+            goos: darwin
+            goarch: amd64
+            artifact: repjan-darwin-x64
+          - target: windows-x64
+            os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact: repjan-windows-x64.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: go build -ldflags="-s -w" -o ${{ matrix.artifact }} ./cmd/repjan
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          cp artifacts/repjan-linux-x64/repjan-linux-x64 release/
+          cp artifacts/repjan-darwin-arm64/repjan-darwin-arm64 release/
+          cp artifacts/repjan-darwin-x64/repjan-darwin-x64 release/
+          cp artifacts/repjan-windows-x64.exe/repjan-windows-x64.exe release/
+          chmod +x release/repjan-linux-x64
+          chmod +x release/repjan-darwin-arm64
+          chmod +x release/repjan-darwin-x64
+          ls -la release/
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        id: changelog
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGELOG.md
+        continue-on-error: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/repjan-linux-x64
+            release/repjan-darwin-arm64
+            release/repjan-darwin-x64
+            release/repjan-windows-x64.exe
+          body: ${{ steps.changelog.outputs.content }}
+          draft: false
+          prerelease: false
