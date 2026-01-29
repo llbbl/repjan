@@ -6,6 +6,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -436,4 +437,362 @@ func (s *Store) AddMarkedRepo(owner, repoName string) error {
 		return fmt.Errorf("adding marked repo: %w", err)
 	}
 	return nil
+}
+
+// RepoChange represents an audit record of a repository change.
+type RepoChange struct {
+	ID            int64
+	Owner         string
+	RepoName      string
+	Action        string    // archived, marked, unmarked, deleted, synced
+	PerformedAt   time.Time
+	PerformedBy   string // user, system, sync
+	PreviousState string // JSON string
+	NewState      string // JSON string
+	Notes         string
+}
+
+// RecordRepoChange records a modification to a repository.
+// prevState and newState can be any JSON-serializable value (or nil).
+func (s *Store) RecordRepoChange(owner, repoName, action, performedBy string, prevState, newState interface{}, notes string) error {
+	var prevJSON, newJSON string
+	if prevState != nil {
+		if data, err := json.Marshal(prevState); err == nil {
+			prevJSON = string(data)
+		}
+	}
+	if newState != nil {
+		if data, err := json.Marshal(newState); err == nil {
+			newJSON = string(data)
+		}
+	}
+
+	_, err := s.db.Exec(`
+		INSERT INTO repo_changes (owner, repo_name, action, performed_by, previous_state, new_state, notes)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, owner, repoName, action, performedBy, nullString(prevJSON), nullString(newJSON), nullString(notes))
+	if err != nil {
+		return fmt.Errorf("recording repo change: %w", err)
+	}
+
+	return nil
+}
+
+// GetRepoHistory returns change history for a specific repository.
+func (s *Store) GetRepoHistory(owner, repoName string, limit int) ([]RepoChange, error) {
+	rows, err := s.db.Query(`
+		SELECT id, owner, repo_name, action, performed_at, performed_by, previous_state, new_state, notes
+		FROM repo_changes
+		WHERE owner = ? AND repo_name = ?
+		ORDER BY performed_at DESC, id DESC
+		LIMIT ?
+	`, owner, repoName, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying repo history: %w", err)
+	}
+	defer rows.Close()
+
+	return scanRepoChanges(rows)
+}
+
+// GetRecentChanges returns recent changes across all repos for an owner.
+func (s *Store) GetRecentChanges(owner string, limit int) ([]RepoChange, error) {
+	rows, err := s.db.Query(`
+		SELECT id, owner, repo_name, action, performed_at, performed_by, previous_state, new_state, notes
+		FROM repo_changes
+		WHERE owner = ?
+		ORDER BY performed_at DESC, id DESC
+		LIMIT ?
+	`, owner, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying recent changes: %w", err)
+	}
+	defer rows.Close()
+
+	return scanRepoChanges(rows)
+}
+
+// GetChangesByAction returns changes filtered by action type.
+func (s *Store) GetChangesByAction(owner, action string, limit int) ([]RepoChange, error) {
+	rows, err := s.db.Query(`
+		SELECT id, owner, repo_name, action, performed_at, performed_by, previous_state, new_state, notes
+		FROM repo_changes
+		WHERE owner = ? AND action = ?
+		ORDER BY performed_at DESC, id DESC
+		LIMIT ?
+	`, owner, action, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying changes by action: %w", err)
+	}
+	defer rows.Close()
+
+	return scanRepoChanges(rows)
+}
+
+// scanRepoChanges scans rows into a slice of RepoChange.
+func scanRepoChanges(rows *sql.Rows) ([]RepoChange, error) {
+	var changes []RepoChange
+	for rows.Next() {
+		var change RepoChange
+		var performedAt, prevState, newState, notes sql.NullString
+
+		err := rows.Scan(
+			&change.ID,
+			&change.Owner,
+			&change.RepoName,
+			&change.Action,
+			&performedAt,
+			&change.PerformedBy,
+			&prevState,
+			&newState,
+			&notes,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scanning repo change: %w", err)
+		}
+
+		if performedAt.Valid && performedAt.String != "" {
+			t, err := parseTimeFromSQLite(performedAt.String)
+			if err != nil {
+				return nil, fmt.Errorf("parsing performed_at: %w", err)
+			}
+			change.PerformedAt = t
+		}
+		if prevState.Valid {
+			change.PreviousState = prevState.String
+		}
+		if newState.Valid {
+			change.NewState = newState.String
+		}
+		if notes.Valid {
+			change.Notes = notes.String
+		}
+
+		changes = append(changes, change)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rows: %w", err)
+	}
+
+	return changes, nil
+}
+
+// SyncRecord represents a sync history entry.
+type SyncRecord struct {
+	ID            int64
+	Owner         string
+	StartedAt     time.Time
+	CompletedAt   *time.Time // nullable
+	Status        string     // running, success, error, partial
+	ReposFetched  int
+	ReposInserted int
+	ReposUpdated  int
+	ErrorMessage  string
+	DurationMs    int64
+}
+
+// RecordSyncStart creates a new sync record and returns its ID.
+func (s *Store) RecordSyncStart(owner string) (int64, error) {
+	result, err := s.db.Exec(`
+		INSERT INTO sync_history (owner, started_at, status)
+		VALUES (?, ?, 'running')
+	`, owner, formatTimeForSQLite(time.Now()))
+	if err != nil {
+		return 0, fmt.Errorf("inserting sync record: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("getting last insert id: %w", err)
+	}
+
+	return id, nil
+}
+
+// RecordSyncComplete updates a sync record with completion data.
+func (s *Store) RecordSyncComplete(syncID int64, status string, fetched, inserted, updated int, errMsg string) error {
+	now := time.Now()
+	startedAt, err := s.getSyncStartedAt(syncID)
+	if err != nil {
+		return fmt.Errorf("getting sync started_at: %w", err)
+	}
+
+	durationMs := now.Sub(startedAt).Milliseconds()
+
+	result, err := s.db.Exec(`
+		UPDATE sync_history SET
+			completed_at = ?,
+			status = ?,
+			repos_fetched = ?,
+			repos_inserted = ?,
+			repos_updated = ?,
+			error_message = ?,
+			duration_ms = ?
+		WHERE id = ?
+	`,
+		formatTimeForSQLite(now),
+		status,
+		fetched,
+		inserted,
+		updated,
+		nullString(errMsg),
+		durationMs,
+		syncID,
+	)
+	if err != nil {
+		return fmt.Errorf("updating sync record: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("getting rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// getSyncStartedAt retrieves the started_at time for a sync record.
+func (s *Store) getSyncStartedAt(syncID int64) (time.Time, error) {
+	var startedAt string
+	err := s.db.QueryRow(`SELECT started_at FROM sync_history WHERE id = ?`, syncID).Scan(&startedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return time.Time{}, ErrNotFound
+		}
+		return time.Time{}, err
+	}
+
+	return parseTimeFromSQLite(startedAt)
+}
+
+// GetSyncHistory returns recent sync records for an owner.
+func (s *Store) GetSyncHistory(owner string, limit int) ([]SyncRecord, error) {
+	rows, err := s.db.Query(`
+		SELECT id, owner, started_at, completed_at, status,
+		       repos_fetched, repos_inserted, repos_updated,
+		       error_message, duration_ms
+		FROM sync_history
+		WHERE owner = ?
+		ORDER BY started_at DESC, id DESC
+		LIMIT ?
+	`, owner, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying sync history: %w", err)
+	}
+	defer rows.Close()
+
+	var records []SyncRecord
+	for rows.Next() {
+		record, err := scanSyncRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rows: %w", err)
+	}
+
+	return records, nil
+}
+
+// GetLastSuccessfulSync returns the most recent successful sync for an owner.
+func (s *Store) GetLastSuccessfulSync(owner string) (*SyncRecord, error) {
+	row := s.db.QueryRow(`
+		SELECT id, owner, started_at, completed_at, status,
+		       repos_fetched, repos_inserted, repos_updated,
+		       error_message, duration_ms
+		FROM sync_history
+		WHERE owner = ? AND status = 'success'
+		ORDER BY started_at DESC, id DESC
+		LIMIT 1
+	`, owner)
+
+	record, err := scanSyncRecordRow(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("querying last successful sync: %w", err)
+	}
+
+	return &record, nil
+}
+
+// scanSyncRecord scans a sync record from sql.Rows.
+func scanSyncRecord(rows *sql.Rows) (SyncRecord, error) {
+	return scanSync(rows)
+}
+
+// scanSyncRecordRow scans a sync record from sql.Row.
+func scanSyncRecordRow(row *sql.Row) (SyncRecord, error) {
+	return scanSync(row)
+}
+
+// scanSync handles the common scanning logic for sync records.
+func scanSync(s scanner) (SyncRecord, error) {
+	var record SyncRecord
+	var startedAt, completedAt, errorMessage sql.NullString
+	var durationMs sql.NullInt64
+	var reposFetched, reposInserted, reposUpdated sql.NullInt64
+
+	err := s.Scan(
+		&record.ID,
+		&record.Owner,
+		&startedAt,
+		&completedAt,
+		&record.Status,
+		&reposFetched,
+		&reposInserted,
+		&reposUpdated,
+		&errorMessage,
+		&durationMs,
+	)
+	if err != nil {
+		return SyncRecord{}, err
+	}
+
+	if startedAt.Valid && startedAt.String != "" {
+		t, err := parseTimeFromSQLite(startedAt.String)
+		if err != nil {
+			return SyncRecord{}, fmt.Errorf("parsing started_at: %w", err)
+		}
+		record.StartedAt = t
+	}
+
+	if completedAt.Valid && completedAt.String != "" {
+		t, err := parseTimeFromSQLite(completedAt.String)
+		if err != nil {
+			return SyncRecord{}, fmt.Errorf("parsing completed_at: %w", err)
+		}
+		record.CompletedAt = &t
+	}
+
+	if errorMessage.Valid {
+		record.ErrorMessage = errorMessage.String
+	}
+
+	if durationMs.Valid {
+		record.DurationMs = durationMs.Int64
+	}
+
+	if reposFetched.Valid {
+		record.ReposFetched = int(reposFetched.Int64)
+	}
+
+	if reposInserted.Valid {
+		record.ReposInserted = int(reposInserted.Int64)
+	}
+
+	if reposUpdated.Valid {
+		record.ReposUpdated = int(reposUpdated.Int64)
+	}
+
+	return record, nil
 }

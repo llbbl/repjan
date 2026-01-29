@@ -6,7 +6,7 @@
 
 All Go source files must include this header:
 ```go
-// SPDX-FileCopyrightText: 2026 api2spec
+// SPDX-FileCopyrightText: 2026 Logan Lindquist Land
 // SPDX-License-Identifier: FSL-1.1-MIT
 ```
 
@@ -39,3 +39,4 @@ bd sync               # Sync with git
 - **NEVER run git add/commit/push commands directly** - always use the commit-manager agent
 - Use the commit-manager agent for ALL version control operations (staging, commits, pushes, PRs)
 - If resuming the commit-manager agent fails (API error, concurrency issues), **start a new commit-manager agent** instead of falling back to direct git commands
+- **DO NOT override commit-manager's guidelines** - When calling commit-manager, describe the changes but do NOT specify commit message format, attribution lines, or Co-Authored-By. Let the agent follow its own markdown file guidelines (`~/.claude/agents/commit-manager.md`)

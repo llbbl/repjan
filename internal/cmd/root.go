@@ -5,7 +5,7 @@ package cmd
 
 import (
 	"fmt"
-	"os"
+	"log/slog"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,6 +14,7 @@ import (
 	"github.com/llbbl/repjan/internal/config"
 	"github.com/llbbl/repjan/internal/db"
 	"github.com/llbbl/repjan/internal/github"
+	"github.com/llbbl/repjan/internal/logging"
 	"github.com/llbbl/repjan/internal/store"
 	"github.com/llbbl/repjan/internal/sync"
 	"github.com/llbbl/repjan/internal/tui"
@@ -96,18 +97,17 @@ It helps identify inactive repos and batch archive them.`,
 
 		// If we have cached data and it's recent (within sync interval), use it
 		if cacheErr == nil && len(cachedRepos) > 0 && !lastSyncTime.IsZero() && time.Since(lastSyncTime) < effectiveSyncInterval {
-			fmt.Fprintf(os.Stderr, "Loading from cache (last synced %s ago)...\n", time.Since(lastSyncTime).Round(time.Second))
+			slog.Info("loading from cache", "last_synced_ago", time.Since(lastSyncTime).Round(time.Second))
 			repos = cachedRepos
 			usingCache = true
 		} else {
 			// Fetch fresh data from GitHub
-			fmt.Fprintf(os.Stderr, "Fetching repositories for %s from GitHub...\n", targetOwner)
+			slog.Info("fetching repositories", "owner", targetOwner, "source", "github")
 			freshRepos, fetchErr := client.FetchRepositories(targetOwner)
 			if fetchErr != nil {
 				// If fetch fails but we have cached data, use it with a warning
 				if cacheErr == nil && len(cachedRepos) > 0 {
-					fmt.Fprintf(os.Stderr, "Warning: GitHub fetch failed, using cached data (last synced %s ago)\n", time.Since(lastSyncTime).Round(time.Second))
-					fmt.Fprintf(os.Stderr, "Error: %v\n", fetchErr)
+					slog.Warn("github fetch failed, using cached data", "error", fetchErr, "last_synced_ago", time.Since(lastSyncTime).Round(time.Second))
 					repos = cachedRepos
 					usingCache = true
 				} else {
@@ -116,7 +116,7 @@ It helps identify inactive repos and batch archive them.`,
 			} else {
 				repos = freshRepos
 				lastSyncTime = time.Now()
-				fmt.Fprintf(os.Stderr, "Found %d repositories\n", len(repos))
+				slog.Info("found repositories", "count", len(repos))
 
 				// Upsert fresh repos to database
 				if err := repoStore.UpsertRepositories(targetOwner, repos); err != nil {
@@ -135,7 +135,7 @@ It helps identify inactive repos and batch archive them.`,
 
 		// Load marked repos from database
 		if err := model.LoadMarkedRepos(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to load marked repos: %v\n", err)
+			slog.Warn("failed to load marked repos", "error", err)
 		}
 
 		// Run the TUI
@@ -179,6 +179,18 @@ func Execute() error {
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+
+	// Setup structured logging with configured level and format
+	// CLI flags override config values if provided
+	effectiveLogLevel := cfg.LogLevel
+	if logLevel != "" {
+		effectiveLogLevel = logLevel
+	}
+	effectiveLogFormat := cfg.LogFormat
+	if logFormat != "" {
+		effectiveLogFormat = logFormat
+	}
+	logging.SetupLogger(effectiveLogLevel, effectiveLogFormat)
 
 	return rootCmd.Execute()
 }
