@@ -21,6 +21,14 @@ const (
 	ColorBorder    = lipgloss.Color("#383838") // Border color
 )
 
+// Warning colors for private repository visibility.
+const (
+	ColorWarningBg     = lipgloss.Color("#8B0000") // Dark red background
+	ColorWarningText   = lipgloss.Color("#FFFFFF") // White text
+	ColorWarningAccent = lipgloss.Color("#FF4500") // Orange-red for emphasis
+	ColorWarningBorder = lipgloss.Color("#FF0000") // Bright red border
+)
+
 // Styles contains all lipgloss style definitions for the TUI.
 type Styles struct {
 	// Header styles
@@ -56,6 +64,12 @@ type Styles struct {
 	Error   lipgloss.Style
 	Warning lipgloss.Style
 	Success lipgloss.Style
+
+	// Private warning styles
+	PrivateWarningBanner lipgloss.Style // Full warning banner
+	PrivateWarningText   lipgloss.Style // Text within the warning
+	PrivateIndicator     lipgloss.Style // Bold red indicator for filter bar
+	PrivateHeaderTint    lipgloss.Style // Tinted header when private visible
 }
 
 // DefaultStyles creates a new Styles instance with default styling.
@@ -154,6 +168,34 @@ func DefaultStyles() Styles {
 		Success: lipgloss.NewStyle().
 			Foreground(ColorActive).
 			Bold(true),
+
+		// Private warning styles
+		PrivateWarningBanner: lipgloss.NewStyle().
+			Background(ColorWarningBg).
+			Foreground(ColorWarningText).
+			Bold(true).
+			Padding(0, 1).
+			BorderStyle(lipgloss.ThickBorder()).
+			BorderForeground(ColorWarningBorder).
+			BorderTop(true).
+			BorderBottom(true),
+
+		PrivateWarningText: lipgloss.NewStyle().
+			Foreground(ColorWarningText).
+			Background(ColorWarningBg).
+			Bold(true),
+
+		PrivateIndicator: lipgloss.NewStyle().
+			Foreground(ColorWarningBorder).
+			Background(ColorWarningBg).
+			Bold(true),
+
+		PrivateHeaderTint: lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(ColorWarningBorder).
+			BorderBottom(true).
+			Background(lipgloss.Color("#3D0000")).
+			Padding(0, 1),
 	}
 }
 

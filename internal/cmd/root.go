@@ -80,6 +80,8 @@ func init() {
 
 	// Add subcommands
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(dbCmd)
+	rootCmd.AddCommand(syncCmd)
 }
 
 // Execute runs the root command.

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 api2spec
+// SPDX-FileCopyrightText: 2026 Logan Lindquist Land
 // SPDX-License-Identifier: FSL-1.1-MIT
 
 package db

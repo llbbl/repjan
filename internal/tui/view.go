@@ -27,12 +27,20 @@ func (m Model) View() string {
 	// Build main view
 	sections := []string{
 		m.renderHeader(),
+	}
+
+	// Add private warning banner right after header when private repos are visible
+	if m.showPrivate {
+		sections = append(sections, m.renderPrivateWarning())
+	}
+
+	sections = append(sections,
 		m.renderFilters(),
 		m.renderSortBar(),
 		m.renderTableHeader(),
 		m.renderTableBody(),
 		m.renderFooter(),
-	}
+	)
 
 	// Add error message if present
 	if m.lastError != nil {
@@ -94,7 +102,31 @@ func (m Model) renderHeader() string {
 
 	fullHeader := lipgloss.JoinHorizontal(lipgloss.Center, headerContent, spacing, helpHint)
 
+	// Use warning-tinted header when private repos are visible
+	if m.showPrivate {
+		return m.styles.PrivateHeaderTint.Width(m.width).Render(fullHeader)
+	}
 	return m.styles.Header.Width(m.width).Render(fullHeader)
+}
+
+// renderPrivateWarning renders a prominent warning banner when private repos are visible.
+func (m Model) renderPrivateWarning() string {
+	if !m.showPrivate {
+		return ""
+	}
+
+	warningText := "⚠ PRIVATE REPOS VISIBLE - Screenshots may expose sensitive data ⚠"
+
+	// Center the warning text within the available width
+	textWidth := lipgloss.Width(warningText)
+	availableWidth := m.width - 4 // Account for padding and borders
+
+	if availableWidth > textWidth {
+		leftPadding := (availableWidth - textWidth) / 2
+		warningText = strings.Repeat(" ", leftPadding) + warningText + strings.Repeat(" ", availableWidth-textWidth-leftPadding)
+	}
+
+	return m.styles.PrivateWarningBanner.Width(m.width).Render(warningText)
 }
 
 // renderFilters renders the filter bar with available filter options.
@@ -147,9 +179,9 @@ func (m Model) renderFilters() string {
 	// Add visibility toggles section
 	parts = append(parts, " | ")
 
-	// Private visibility toggle
+	// Private visibility toggle - use bold red warning when active
 	if m.showPrivate {
-		parts = append(parts, m.styles.ActiveFilter.Render("[P]+Private"))
+		parts = append(parts, m.styles.PrivateIndicator.Render("[P]+Private ⚠"))
 	} else {
 		parts = append(parts, m.styles.HelpDesc.Render("[P]rivate"))
 	}
