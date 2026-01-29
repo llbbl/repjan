@@ -476,3 +476,194 @@ func TestStore_DaysSinceActivityCalculated(t *testing.T) {
 	// Should have calculated ~30 days
 	assert.InDelta(t, 30, result.DaysSinceActivity, 1)
 }
+
+// Tests for marked repos functionality
+
+func TestSaveMarkedRepos_InsertsNewMarks(t *testing.T) {
+	store := setupTestStore(t)
+	owner := "testowner"
+
+	err := store.SaveMarkedRepos(owner, []string{"repo1", "repo2", "repo3"})
+	require.NoError(t, err)
+
+	// Verify marks were saved
+	marks, err := store.GetMarkedRepos(owner)
+	require.NoError(t, err)
+	assert.Len(t, marks, 3)
+	assert.Contains(t, marks, "repo1")
+	assert.Contains(t, marks, "repo2")
+	assert.Contains(t, marks, "repo3")
+}
+
+func TestSaveMarkedRepos_ReplacesExistingMarks(t *testing.T) {
+	store := setupTestStore(t)
+	owner := "testowner"
+
+	// Insert initial marks
+	err := store.SaveMarkedRepos(owner, []string{"repo1", "repo2"})
+	require.NoError(t, err)
+
+	// Replace with new marks
+	err = store.SaveMarkedRepos(owner, []string{"repo3", "repo4"})
+	require.NoError(t, err)
+
+	// Verify old marks are gone and new marks exist
+	marks, err := store.GetMarkedRepos(owner)
+	require.NoError(t, err)
+	assert.Len(t, marks, 2)
+	assert.NotContains(t, marks, "repo1")
+	assert.NotContains(t, marks, "repo2")
+	assert.Contains(t, marks, "repo3")
+	assert.Contains(t, marks, "repo4")
+}
+
+func TestSaveMarkedRepos_EmptySliceClearsMarks(t *testing.T) {
+	store := setupTestStore(t)
+	owner := "testowner"
+
+	// Insert marks
+	err := store.SaveMarkedRepos(owner, []string{"repo1", "repo2"})
+	require.NoError(t, err)
+
+	// Clear marks by saving empty slice
+	err = store.SaveMarkedRepos(owner, []string{})
+	require.NoError(t, err)
+
+	// Verify marks are gone
+	marks, err := store.GetMarkedRepos(owner)
+	require.NoError(t, err)
+	assert.Empty(t, marks)
+}
+
+func TestGetMarkedRepos_ReturnsEmptyForNoMarks(t *testing.T) {
+	store := setupTestStore(t)
+
+	marks, err := store.GetMarkedRepos("nonexistent")
+	require.NoError(t, err)
+	assert.Empty(t, marks)
+}
+
+func TestGetMarkedRepos_FiltersByOwner(t *testing.T) {
+	store := setupTestStore(t)
+
+	// Save marks for two owners
+	err := store.SaveMarkedRepos("owner1", []string{"repo1", "repo2"})
+	require.NoError(t, err)
+
+	err = store.SaveMarkedRepos("owner2", []string{"repo3"})
+	require.NoError(t, err)
+
+	// Query for owner1
+	marks, err := store.GetMarkedRepos("owner1")
+	require.NoError(t, err)
+	assert.Len(t, marks, 2)
+
+	// Query for owner2
+	marks, err = store.GetMarkedRepos("owner2")
+	require.NoError(t, err)
+	assert.Len(t, marks, 1)
+	assert.Contains(t, marks, "repo3")
+}
+
+func TestClearMarkedRepos_RemovesAllMarksForOwner(t *testing.T) {
+	store := setupTestStore(t)
+	owner := "testowner"
+
+	// Save marks
+	err := store.SaveMarkedRepos(owner, []string{"repo1", "repo2"})
+	require.NoError(t, err)
+
+	// Clear marks
+	err = store.ClearMarkedRepos(owner)
+	require.NoError(t, err)
+
+	// Verify marks are gone
+	marks, err := store.GetMarkedRepos(owner)
+	require.NoError(t, err)
+	assert.Empty(t, marks)
+}
+
+func TestClearMarkedRepos_DoesNotAffectOtherOwners(t *testing.T) {
+	store := setupTestStore(t)
+
+	// Save marks for two owners
+	err := store.SaveMarkedRepos("owner1", []string{"repo1"})
+	require.NoError(t, err)
+
+	err = store.SaveMarkedRepos("owner2", []string{"repo2"})
+	require.NoError(t, err)
+
+	// Clear marks for owner1
+	err = store.ClearMarkedRepos("owner1")
+	require.NoError(t, err)
+
+	// owner1 marks should be gone
+	marks, err := store.GetMarkedRepos("owner1")
+	require.NoError(t, err)
+	assert.Empty(t, marks)
+
+	// owner2 marks should still exist
+	marks, err = store.GetMarkedRepos("owner2")
+	require.NoError(t, err)
+	assert.Len(t, marks, 1)
+}
+
+func TestAddMarkedRepo_AddsNewMark(t *testing.T) {
+	store := setupTestStore(t)
+	owner := "testowner"
+
+	err := store.AddMarkedRepo(owner, "repo1")
+	require.NoError(t, err)
+
+	marks, err := store.GetMarkedRepos(owner)
+	require.NoError(t, err)
+	assert.Len(t, marks, 1)
+	assert.Contains(t, marks, "repo1")
+}
+
+func TestAddMarkedRepo_IgnoresDuplicates(t *testing.T) {
+	store := setupTestStore(t)
+	owner := "testowner"
+
+	// Add same repo twice
+	err := store.AddMarkedRepo(owner, "repo1")
+	require.NoError(t, err)
+
+	err = store.AddMarkedRepo(owner, "repo1")
+	require.NoError(t, err) // Should not error
+
+	// Should only have one mark
+	marks, err := store.GetMarkedRepos(owner)
+	require.NoError(t, err)
+	assert.Len(t, marks, 1)
+}
+
+func TestRemoveMarkedRepo_RemovesMark(t *testing.T) {
+	store := setupTestStore(t)
+	owner := "testowner"
+
+	// Add marks
+	err := store.AddMarkedRepo(owner, "repo1")
+	require.NoError(t, err)
+	err = store.AddMarkedRepo(owner, "repo2")
+	require.NoError(t, err)
+
+	// Remove one
+	err = store.RemoveMarkedRepo(owner, "repo1")
+	require.NoError(t, err)
+
+	// Verify
+	marks, err := store.GetMarkedRepos(owner)
+	require.NoError(t, err)
+	assert.Len(t, marks, 1)
+	assert.NotContains(t, marks, "repo1")
+	assert.Contains(t, marks, "repo2")
+}
+
+func TestRemoveMarkedRepo_NoErrorForNonexistent(t *testing.T) {
+	store := setupTestStore(t)
+
+	// Remove nonexistent mark - should not error
+	err := store.RemoveMarkedRepo("owner", "nonexistent")
+	require.NoError(t, err)
+}

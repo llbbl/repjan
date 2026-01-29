@@ -56,10 +56,10 @@ func TestGetMigrationVersion(t *testing.T) {
 	err = RunMigrations(db)
 	require.NoError(t, err)
 
-	// Check version
+	// Check version - should be 2 after running both migrations
 	version, err := GetMigrationVersion(db)
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), version, "migration version should be 1 after running 001_create_repositories.sql")
+	assert.Equal(t, int64(2), version, "migration version should be 2 after running all migrations")
 }
 
 func TestClose_NilDB(t *testing.T) {
@@ -119,4 +119,62 @@ func TestRepositoriesTable_UniqueConstraints(t *testing.T) {
 	// Try to insert duplicate owner+name - should fail
 	_, err = db.Exec(`INSERT INTO repositories (owner, name, full_name) VALUES ('test-owner', 'test-repo', 'different/full-name')`)
 	assert.Error(t, err, "duplicate owner+name should violate unique constraint")
+}
+
+func TestMarkedReposTable_Exists(t *testing.T) {
+	db, err := Open(":memory:")
+	require.NoError(t, err)
+	defer Close(db)
+
+	err = RunMigrations(db)
+	require.NoError(t, err)
+
+	// Verify marked_repos table exists by querying it
+	_, err = db.Exec("SELECT id, owner, repo_name, marked_at FROM marked_repos LIMIT 1")
+	assert.NoError(t, err, "marked_repos table should exist with expected columns")
+}
+
+func TestMarkedReposTable_UniqueConstraint(t *testing.T) {
+	db, err := Open(":memory:")
+	require.NoError(t, err)
+	defer Close(db)
+
+	err = RunMigrations(db)
+	require.NoError(t, err)
+
+	// Insert a marked repo
+	_, err = db.Exec(`INSERT INTO marked_repos (owner, repo_name) VALUES ('test-owner', 'test-repo')`)
+	require.NoError(t, err)
+
+	// Try to insert duplicate owner+repo_name - should fail
+	_, err = db.Exec(`INSERT INTO marked_repos (owner, repo_name) VALUES ('test-owner', 'test-repo')`)
+	assert.Error(t, err, "duplicate owner+repo_name should violate unique constraint")
+
+	// Same repo for different owner should succeed
+	_, err = db.Exec(`INSERT INTO marked_repos (owner, repo_name) VALUES ('other-owner', 'test-repo')`)
+	assert.NoError(t, err, "same repo_name for different owner should succeed")
+}
+
+func TestMarkedReposTable_Index(t *testing.T) {
+	db, err := Open(":memory:")
+	require.NoError(t, err)
+	defer Close(db)
+
+	err = RunMigrations(db)
+	require.NoError(t, err)
+
+	// Verify index exists by checking sqlite_master
+	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='marked_repos'")
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var indexes []string
+	for rows.Next() {
+		var name string
+		err := rows.Scan(&name)
+		require.NoError(t, err)
+		indexes = append(indexes, name)
+	}
+
+	assert.Contains(t, indexes, "idx_marked_repos_owner")
 }

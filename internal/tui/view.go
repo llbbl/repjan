@@ -6,6 +6,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -351,7 +352,7 @@ func (m Model) renderTableBody() string {
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
-// renderFooter renders the footer with keybinding hints.
+// renderFooter renders the footer with keybinding hints and sync status.
 func (m Model) renderFooter() string {
 	bindings := []struct {
 		key  string
@@ -375,8 +376,73 @@ func (m Model) renderFooter() string {
 		}
 	}
 
-	footer := strings.Join(parts, "")
-	return m.styles.FilterBar.Render(footer)
+	keybindings := strings.Join(parts, "")
+
+	// Build status bar with sync info
+	statusBar := m.renderStatusBar()
+
+	// Combine keybindings and status bar
+	footer := lipgloss.JoinVertical(lipgloss.Left,
+		m.styles.FilterBar.Render(keybindings),
+		statusBar,
+	)
+
+	return footer
+}
+
+// renderStatusBar renders the status bar showing sync status and messages.
+func (m Model) renderStatusBar() string {
+	var parts []string
+
+	// Show syncing indicator
+	if m.syncing {
+		parts = append(parts, m.styles.HelpKey.Render("Syncing..."))
+	} else {
+		// Show last sync time
+		syncStatus := m.formatSyncStatus()
+		parts = append(parts, m.styles.HelpDesc.Render(syncStatus))
+	}
+
+	// Show cached data warning if applicable
+	if m.usingCache {
+		parts = append(parts, m.styles.Error.Render(" (cached data)"))
+	}
+
+	// Show status message if present
+	if m.statusMessage != "" {
+		parts = append(parts, m.styles.HelpDesc.Render(" | "))
+		parts = append(parts, m.styles.HelpKey.Render(m.statusMessage))
+	}
+
+	return m.styles.FilterBar.Render(strings.Join(parts, ""))
+}
+
+// formatSyncStatus formats the last sync time into a human-readable string.
+func (m Model) formatSyncStatus() string {
+	if m.lastSyncTime.IsZero() {
+		return "Not synced"
+	}
+
+	elapsed := time.Since(m.lastSyncTime)
+
+	if elapsed < time.Minute {
+		return "Last synced: just now"
+	} else if elapsed < time.Hour {
+		mins := int(elapsed.Minutes())
+		if mins == 1 {
+			return "Last synced: 1 minute ago"
+		}
+		return fmt.Sprintf("Last synced: %d minutes ago", mins)
+	} else if elapsed < 24*time.Hour {
+		hours := int(elapsed.Hours())
+		if hours == 1 {
+			return "Last synced: 1 hour ago"
+		}
+		return fmt.Sprintf("Last synced: %d hours ago", hours)
+	}
+
+	// For older syncs, show the date/time
+	return fmt.Sprintf("Last synced: %s", m.lastSyncTime.Format("Jan 2 15:04"))
 }
 
 // truncateString truncates a string to the specified length, adding "..." if truncated.

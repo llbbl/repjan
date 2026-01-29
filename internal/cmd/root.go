@@ -6,11 +6,15 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"github.com/llbbl/repjan/internal/db"
 	"github.com/llbbl/repjan/internal/github"
+	"github.com/llbbl/repjan/internal/store"
+	"github.com/llbbl/repjan/internal/sync"
 	"github.com/llbbl/repjan/internal/tui"
 )
 
@@ -19,9 +23,10 @@ var Version = "dev"
 
 // Flag variables
 var (
-	owner      string
-	fabric     bool
-	fabricPath string
+	owner        string
+	fabric       bool
+	fabricPath   string
+	syncInterval time.Duration
 )
 
 var rootCmd = &cobra.Command{
@@ -43,16 +48,77 @@ It helps identify inactive repos and batch archive them.`,
 			targetOwner = user
 		}
 
-		// Fetch repositories
-		fmt.Fprintf(os.Stderr, "Fetching repositories for %s...\n", targetOwner)
-		repos, err := client.FetchRepositories(targetOwner)
+		// Open database
+		dbPath, err := db.GetDefaultDBPath()
 		if err != nil {
-			return fmt.Errorf("failed to fetch repositories: %w", err)
+			return fmt.Errorf("getting database path: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "Found %d repositories\n", len(repos))
 
-		// Initialize TUI model
-		model := tui.NewModel(repos, targetOwner, client, fabric, fabricPath)
+		database, err := db.Open(dbPath)
+		if err != nil {
+			return fmt.Errorf("opening database: %w", err)
+		}
+		defer db.Close(database)
+
+		// Ensure migrations are run
+		if err := db.RunMigrations(database); err != nil {
+			return fmt.Errorf("running migrations: %w", err)
+		}
+
+		// Create store
+		repoStore := store.New(database)
+
+		// Try to load cached data first
+		var repos []github.Repository
+		var lastSyncTime time.Time
+		var usingCache bool
+
+		lastSyncTime, _ = repoStore.GetLastSyncTime(targetOwner)
+		cachedRepos, cacheErr := repoStore.GetRepositories(targetOwner)
+
+		// If we have cached data and it's recent (within sync interval), use it
+		if cacheErr == nil && len(cachedRepos) > 0 && !lastSyncTime.IsZero() && time.Since(lastSyncTime) < syncInterval {
+			fmt.Fprintf(os.Stderr, "Loading from cache (last synced %s ago)...\n", time.Since(lastSyncTime).Round(time.Second))
+			repos = cachedRepos
+			usingCache = true
+		} else {
+			// Fetch fresh data from GitHub
+			fmt.Fprintf(os.Stderr, "Fetching repositories for %s from GitHub...\n", targetOwner)
+			freshRepos, fetchErr := client.FetchRepositories(targetOwner)
+			if fetchErr != nil {
+				// If fetch fails but we have cached data, use it with a warning
+				if cacheErr == nil && len(cachedRepos) > 0 {
+					fmt.Fprintf(os.Stderr, "Warning: GitHub fetch failed, using cached data (last synced %s ago)\n", time.Since(lastSyncTime).Round(time.Second))
+					fmt.Fprintf(os.Stderr, "Error: %v\n", fetchErr)
+					repos = cachedRepos
+					usingCache = true
+				} else {
+					return fmt.Errorf("failed to fetch repositories: %w", fetchErr)
+				}
+			} else {
+				repos = freshRepos
+				lastSyncTime = time.Now()
+				fmt.Fprintf(os.Stderr, "Found %d repositories\n", len(repos))
+
+				// Upsert fresh repos to database
+				if err := repoStore.UpsertRepositories(targetOwner, repos); err != nil {
+					return fmt.Errorf("storing repositories: %w", err)
+				}
+			}
+		}
+
+		// Create and start background syncer
+		syncer := sync.New(repoStore, client, targetOwner, syncInterval)
+		syncCh := syncer.Start()
+		defer syncer.Stop()
+
+		// Initialize TUI model with store and sync channel
+		model := tui.NewModelWithOptions(repos, targetOwner, client, repoStore, fabric, fabricPath, lastSyncTime, usingCache, syncCh)
+
+		// Load marked repos from database
+		if err := model.LoadMarkedRepos(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load marked repos: %v\n", err)
+		}
 
 		// Run the TUI
 		p := tea.NewProgram(model, tea.WithAltScreen())
@@ -77,6 +143,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&owner, "owner", "o", "", "GitHub username or org to audit")
 	rootCmd.PersistentFlags().BoolVarP(&fabric, "fabric", "f", false, "Enable Fabric AI integration")
 	rootCmd.PersistentFlags().StringVar(&fabricPath, "fabric-path", "fabric", "Custom path to Fabric binary")
+	rootCmd.PersistentFlags().DurationVar(&syncInterval, "sync-interval", 5*time.Minute, "Interval for background repository sync")
 
 	// Add subcommands
 	rootCmd.AddCommand(versionCmd)

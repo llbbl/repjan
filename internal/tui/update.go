@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -59,7 +60,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case ErrorMsg:
 		m.lastError = msg.Err
+	case syncStartedMsg:
+		// Background sync has started
+		m.syncing = true
+		m.statusMessage = "Syncing repositories..."
+		// Continue listening for more sync messages
+		if m.syncCh != nil {
+			return m, m.listenForSyncMsgs()
+		}
+	case ReposSyncedMsg:
+		// Handle sync updates from background syncer
+		m.syncing = false
+		if msg.Error != nil {
+			m.statusMessage = fmt.Sprintf("Sync failed: %v", msg.Error)
+		} else if len(msg.Repos) > 0 {
+			// Preserve cursor position relative to current repo if possible
+			var currentRepoName string
+			if m.cursor < len(m.filteredRepos) {
+				currentRepoName = m.filteredRepos[m.cursor].FullName()
+			}
+
+			m.repos = msg.Repos
+			m.lastSyncTime = time.Now()
+			m.usingCache = false
+			m.statusMessage = fmt.Sprintf("Synced %d repos", len(msg.Repos))
+			m.RefreshFilteredRepos()
+
+			// Try to restore cursor to same repo
+			if currentRepoName != "" {
+				for i, repo := range m.filteredRepos {
+					if repo.FullName() == currentRepoName {
+						m.cursor = i
+						break
+					}
+				}
+			}
+			// Ensure cursor is within bounds
+			if m.cursor >= len(m.filteredRepos) {
+				m.cursor = max(0, len(m.filteredRepos)-1)
+			}
+		}
+		// Continue listening for more sync messages
+		if m.syncCh != nil {
+			return m, m.listenForSyncMsgs()
+		}
 	}
+
 	return m, nil
 }
 
@@ -324,8 +370,16 @@ func (m Model) handleMainViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			key := repo.FullName()
 			if m.marked[key] {
 				delete(m.marked, key)
+				// Persist removal to database
+				if m.store != nil {
+					_ = m.store.RemoveMarkedRepo(m.owner, repo.Name)
+				}
 			} else {
 				m.marked[key] = true
+				// Persist addition to database
+				if m.store != nil {
+					_ = m.store.AddMarkedRepo(m.owner, repo.Name)
+				}
 			}
 		}
 		return m, nil
@@ -335,11 +389,19 @@ func (m Model) handleMainViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		for _, repo := range m.filteredRepos {
 			m.marked[repo.FullName()] = true
 		}
+		// Persist all marks to database
+		if m.store != nil {
+			_ = m.SaveMarkedRepos()
+		}
 		return m, nil
 
 	case "U":
 		// Unmark all repos
 		m.marked = make(map[string]bool)
+		// Clear all marks from database
+		if m.store != nil {
+			_ = m.store.ClearMarkedRepos(m.owner)
+		}
 		return m, nil
 
 	case "enter":
@@ -450,12 +512,20 @@ func (m *Model) markRepoAsArchived(fullName string) {
 }
 
 // clearArchivedMarks removes marks from repos that have been archived.
+// It also updates the database: removes marks and updates is_archived flag.
 func (m *Model) clearArchivedMarks() {
 	for key := range m.marked {
 		// Check if this repo is now archived
-		for _, repo := range m.repos {
+		for i, repo := range m.repos {
 			if repo.FullName() == key && repo.IsArchived {
 				delete(m.marked, key)
+				// Remove from database marked_repos
+				if m.store != nil {
+					_ = m.store.RemoveMarkedRepo(m.owner, repo.Name)
+					// Update is_archived in repositories table
+					m.repos[i].IsArchived = true
+					_ = m.store.UpdateRepository(m.repos[i])
+				}
 				break
 			}
 		}

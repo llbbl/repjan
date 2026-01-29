@@ -342,3 +342,98 @@ func parseTimeFromSQLite(s string) (time.Time, error) {
 
 	return time.Time{}, fmt.Errorf("cannot parse time: %s", s)
 }
+
+// SaveMarkedRepos saves the marked repos for an owner, replacing any existing marks.
+// This uses a transaction to ensure atomicity: clear old marks, insert new ones.
+func (s *Store) SaveMarkedRepos(owner string, repoNames []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // Rollback is no-op after commit
+
+	// Clear existing marks for this owner
+	_, err = tx.Exec(`DELETE FROM marked_repos WHERE owner = ?`, owner)
+	if err != nil {
+		return fmt.Errorf("clearing existing marks: %w", err)
+	}
+
+	// Insert new marks
+	if len(repoNames) > 0 {
+		stmt, err := tx.Prepare(`
+			INSERT INTO marked_repos (owner, repo_name) VALUES (?, ?)
+		`)
+		if err != nil {
+			return fmt.Errorf("preparing statement: %w", err)
+		}
+		defer stmt.Close()
+
+		for _, name := range repoNames {
+			_, err := stmt.Exec(owner, name)
+			if err != nil {
+				return fmt.Errorf("inserting marked repo %s: %w", name, err)
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+
+	return nil
+}
+
+// GetMarkedRepos returns the list of marked repo names for an owner.
+func (s *Store) GetMarkedRepos(owner string) ([]string, error) {
+	rows, err := s.db.Query(`
+		SELECT repo_name FROM marked_repos WHERE owner = ? ORDER BY repo_name
+	`, owner)
+	if err != nil {
+		return nil, fmt.Errorf("querying marked repos: %w", err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scanning marked repo: %w", err)
+		}
+		names = append(names, name)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rows: %w", err)
+	}
+
+	return names, nil
+}
+
+// ClearMarkedRepos removes all marks for an owner.
+func (s *Store) ClearMarkedRepos(owner string) error {
+	_, err := s.db.Exec(`DELETE FROM marked_repos WHERE owner = ?`, owner)
+	if err != nil {
+		return fmt.Errorf("clearing marked repos: %w", err)
+	}
+	return nil
+}
+
+// RemoveMarkedRepo removes a single marked repo by name.
+func (s *Store) RemoveMarkedRepo(owner, repoName string) error {
+	_, err := s.db.Exec(`DELETE FROM marked_repos WHERE owner = ? AND repo_name = ?`, owner, repoName)
+	if err != nil {
+		return fmt.Errorf("removing marked repo: %w", err)
+	}
+	return nil
+}
+
+// AddMarkedRepo adds a single marked repo.
+func (s *Store) AddMarkedRepo(owner, repoName string) error {
+	_, err := s.db.Exec(`
+		INSERT OR IGNORE INTO marked_repos (owner, repo_name) VALUES (?, ?)
+	`, owner, repoName)
+	if err != nil {
+		return fmt.Errorf("adding marked repo: %w", err)
+	}
+	return nil
+}
