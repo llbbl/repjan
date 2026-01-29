@@ -4,6 +4,8 @@
 package tui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -28,16 +30,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.archiveTotal = msg.Total
 		if msg.Err != nil {
 			m.lastError = msg.Err
+		} else if msg.RepoName != "" {
+			// Archive succeeded - update the repo's IsArchived field
+			m.markRepoAsArchived(msg.RepoName)
+		}
+		// Continue to the next repo if there are more
+		if m.archiveState != nil && msg.Current < msg.Total {
+			return m, archiveNextRepo(m.client, m.archiveState.repos, msg.Current, m.archiveState)
 		}
 	case ArchiveCompleteMsg:
 		m.archiving = false
 		m.archiveProgress = 0
 		m.archiveTotal = 0
-		if msg.Failed > 0 {
-			m.statusMessage = "Archive completed with errors"
-		} else {
-			m.statusMessage = "Archive completed successfully"
+		m.archiveState = nil
+		// Clear marks for successfully archived repos and update status message
+		if msg.Succeeded > 0 {
+			m.clearArchivedMarks()
 		}
+		if msg.Failed > 0 {
+			m.statusMessage = fmt.Sprintf("Archive completed: %d succeeded, %d failed", msg.Succeeded, msg.Failed)
+		} else {
+			m.statusMessage = fmt.Sprintf("Successfully archived %d repo%s", msg.Succeeded, pluralize(msg.Succeeded))
+		}
+		m.RefreshFilteredRepos()
 	case FabricResultMsg:
 		if msg.Err != nil {
 			m.lastError = msg.Err
@@ -244,7 +259,13 @@ func (m Model) handleMainViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "p":
-		m.ApplyFilter(FilterPrivate)
+		// Toggle visibility of private repos (privacy-safe default: hidden)
+		m.ToggleShowPrivate()
+		return m, nil
+
+	case "x":
+		// Toggle visibility of archived repos
+		m.ToggleShowArchived()
 		return m, nil
 
 	case "l":
@@ -383,21 +404,24 @@ func (m *Model) archiveMarkedRepos() tea.Cmd {
 		return nil
 	}
 
-	m.archiving = true
-	m.archiveTotal = len(m.marked)
-	m.archiveProgress = 0
-
-	// Return a command that will handle the archive operation
-	// The actual implementation will send ArchiveProgressMsg and ArchiveCompleteMsg
-	return func() tea.Msg {
-		// This is a placeholder - the actual archive logic will be implemented
-		// in the github package and called here
-		return ArchiveCompleteMsg{
-			Succeeded: len(m.marked),
-			Failed:    0,
-			Errors:    nil,
-		}
+	// Collect marked repos
+	toArchive := m.getMarkedRepos()
+	if len(toArchive) == 0 {
+		return nil
 	}
+
+	m.archiving = true
+	m.archiveTotal = len(toArchive)
+	m.archiveProgress = 0
+	m.archiveState = &archiveState{
+		repos:     toArchive,
+		succeeded: 0,
+		failed:    0,
+		errors:    nil,
+	}
+
+	// Start archiving the first repo
+	return archiveNextRepo(m.client, toArchive, 0, m.archiveState)
 }
 
 // exportMarkedRepos returns a command to export marked repositories.
@@ -412,6 +436,29 @@ func (m *Model) exportMarkedRepos() tea.Cmd {
 		// This is a placeholder - the actual export logic will be implemented
 		// and will write to a file or stdout
 		return nil
+	}
+}
+
+// markRepoAsArchived updates a repo's IsArchived field in the model.
+func (m *Model) markRepoAsArchived(fullName string) {
+	for i := range m.repos {
+		if m.repos[i].FullName() == fullName {
+			m.repos[i].IsArchived = true
+			break
+		}
+	}
+}
+
+// clearArchivedMarks removes marks from repos that have been archived.
+func (m *Model) clearArchivedMarks() {
+	for key := range m.marked {
+		// Check if this repo is now archived
+		for _, repo := range m.repos {
+			if repo.FullName() == key && repo.IsArchived {
+				delete(m.marked, key)
+				break
+			}
+		}
 	}
 }
 

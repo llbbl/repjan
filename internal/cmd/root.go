@@ -5,8 +5,13 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+
+	"github.com/llbbl/repjan/internal/github"
+	"github.com/llbbl/repjan/internal/tui"
 )
 
 // Version is set at build time with -ldflags
@@ -25,11 +30,36 @@ var rootCmd = &cobra.Command{
 	Long: `repjan is a TUI tool for auditing and archiving GitHub repositories.
 It helps identify inactive repos and batch archive them.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// TODO: Will be implemented later
-		// 1. If no --owner, get authenticated user
-		// 2. Fetch repositories
-		// 3. Initialize and run TUI
-		fmt.Println("repjan TUI starting...")
+		// Create GitHub client
+		client := github.NewDefaultClient()
+
+		// Determine owner
+		targetOwner := owner
+		if targetOwner == "" {
+			user, err := client.GetAuthenticatedUser()
+			if err != nil {
+				return fmt.Errorf("failed to get authenticated user: %w\nMake sure you're logged in with 'gh auth login'", err)
+			}
+			targetOwner = user
+		}
+
+		// Fetch repositories
+		fmt.Fprintf(os.Stderr, "Fetching repositories for %s...\n", targetOwner)
+		repos, err := client.FetchRepositories(targetOwner)
+		if err != nil {
+			return fmt.Errorf("failed to fetch repositories: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "Found %d repositories\n", len(repos))
+
+		// Initialize TUI model
+		model := tui.NewModel(repos, targetOwner, client, fabric, fabricPath)
+
+		// Run the TUI
+		p := tea.NewProgram(model, tea.WithAltScreen())
+		if _, err := p.Run(); err != nil {
+			return fmt.Errorf("error running TUI: %w", err)
+		}
+
 		return nil
 	},
 }

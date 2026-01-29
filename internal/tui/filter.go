@@ -10,21 +10,30 @@ import (
 	"github.com/llbbl/repjan/internal/github"
 )
 
-// filterRepos returns a filtered slice of repositories based on the filter type and language.
-// Archived repositories are always excluded regardless of filter type.
-func filterRepos(repos []github.Repository, filter Filter, language string) []github.Repository {
+// filterOpts contains visibility options for filtering repositories.
+type filterOpts struct {
+	showPrivate  bool
+	showArchived bool
+}
+
+// filterRepos returns a filtered slice of repositories based on the filter type, language, and visibility options.
+// By default (when opts has zero values), private and archived repos are hidden for privacy safety.
+func filterRepos(repos []github.Repository, filter Filter, language string, opts filterOpts) []github.Repository {
 	result := make([]github.Repository, 0, len(repos))
 
 	for _, repo := range repos {
-		// Always exclude already archived repos
-		if repo.IsArchived {
+		// Apply visibility filters first (privacy-safe defaults)
+		if !opts.showArchived && repo.IsArchived {
+			continue
+		}
+		if !opts.showPrivate && repo.IsPrivate {
 			continue
 		}
 
 		// Apply filter type
 		switch filter {
 		case FilterAll:
-			// Include all non-archived repos
+			// Include all visible repos
 		case FilterOld:
 			if repo.DaysSinceActivity <= 365 {
 				continue
@@ -35,10 +44,6 @@ func filterRepos(repos []github.Repository, filter Filter, language string) []gi
 			}
 		case FilterForks:
 			if !repo.IsFork {
-				continue
-			}
-		case FilterPrivate:
-			if !repo.IsPrivate {
 				continue
 			}
 		}
@@ -155,8 +160,14 @@ func (m *Model) ToggleSortDirection() {
 
 // RefreshFilteredRepos applies the current filter, search, and sort to the repos.
 func (m *Model) RefreshFilteredRepos() {
-	// Apply filter first
-	filtered := filterRepos(m.repos, m.currentFilter, m.languageFilter)
+	// Build visibility options from model state
+	opts := filterOpts{
+		showPrivate:  m.showPrivate,
+		showArchived: m.showArchived,
+	}
+
+	// Apply filter first (with visibility options)
+	filtered := filterRepos(m.repos, m.currentFilter, m.languageFilter, opts)
 	// Then apply search
 	if m.searchQuery != "" {
 		filtered = searchRepos(filtered, m.searchQuery)
@@ -168,4 +179,16 @@ func (m *Model) RefreshFilteredRepos() {
 	if m.cursor >= len(m.filteredRepos) {
 		m.cursor = max(0, len(m.filteredRepos)-1)
 	}
+}
+
+// ToggleShowPrivate toggles the visibility of private repositories.
+func (m *Model) ToggleShowPrivate() {
+	m.showPrivate = !m.showPrivate
+	m.RefreshFilteredRepos()
+}
+
+// ToggleShowArchived toggles the visibility of archived repositories.
+func (m *Model) ToggleShowArchived() {
+	m.showArchived = !m.showArchived
+	m.RefreshFilteredRepos()
 }

@@ -18,7 +18,6 @@ const (
 	FilterOld
 	FilterNoStars
 	FilterForks
-	FilterPrivate
 )
 
 // SortField represents the available sorting fields.
@@ -54,6 +53,7 @@ type Model struct {
 	repos         []github.Repository
 	filteredRepos []github.Repository
 	owner         string
+	client        *github.Client
 
 	// UI State
 	cursor int
@@ -62,6 +62,10 @@ type Model struct {
 	// Filters
 	currentFilter  Filter
 	languageFilter string
+
+	// Visibility toggles (privacy-safe defaults)
+	showPrivate  bool // whether to include private repos (default: false)
+	showArchived bool // whether to include archived repos (default: false)
 
 	// Sorting
 	sortField     SortField
@@ -82,6 +86,7 @@ type Model struct {
 	archiving       bool
 	archiveProgress int
 	archiveTotal    int
+	archiveState    *archiveState // tracks ongoing archive operation
 
 	// Fabric
 	fabricEnabled bool
@@ -132,15 +137,12 @@ type ErrorMsg struct {
 }
 
 // NewModel creates a new TUI model with the provided repositories and configuration.
-func NewModel(repos []github.Repository, owner string, fabricEnabled bool, fabricPath string) Model {
-	// Copy repos to filteredRepos
-	filteredRepos := make([]github.Repository, len(repos))
-	copy(filteredRepos, repos)
-
-	return Model{
+// By default, private and archived repositories are hidden for privacy safety.
+func NewModel(repos []github.Repository, owner string, client *github.Client, fabricEnabled bool, fabricPath string) Model {
+	m := Model{
 		repos:         repos,
-		filteredRepos: filteredRepos,
 		owner:         owner,
+		client:        client,
 		marked:        make(map[string]bool),
 		currentFilter: FilterAll,
 		sortField:     SortName,
@@ -149,7 +151,14 @@ func NewModel(repos []github.Repository, owner string, fabricEnabled bool, fabri
 		fabricEnabled: fabricEnabled,
 		fabricPath:    fabricPath,
 		styles:        DefaultStyles(),
+		// showPrivate and showArchived default to false (Go zero values)
+		// This provides privacy-safe defaults by hiding sensitive repos
 	}
+
+	// Apply initial filtering to respect visibility defaults
+	m.RefreshFilteredRepos()
+
+	return m
 }
 
 // Init implements tea.Model.

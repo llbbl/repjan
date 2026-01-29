@@ -128,26 +128,6 @@ func TestFilterRepos(t *testing.T) {
 			wantLen:  1,
 		},
 		{
-			name: "private filter includes only private repos",
-			repos: []github.Repository{
-				testutil.NewTestRepo(testutil.WithName("public"), testutil.WithPrivate(false)),
-				testutil.NewTestRepo(testutil.WithName("private"), testutil.WithPrivate(true)),
-			},
-			filter:   FilterPrivate,
-			language: "",
-			wantLen:  1,
-		},
-		{
-			name: "private filter excludes archived private repos",
-			repos: []github.Repository{
-				testutil.NewTestRepo(testutil.WithName("private-archived"), testutil.WithPrivate(true), testutil.WithArchived(true)),
-				testutil.NewTestRepo(testutil.WithName("private-active"), testutil.WithPrivate(true)),
-			},
-			filter:   FilterPrivate,
-			language: "",
-			wantLen:  1,
-		},
-		{
 			name: "language filter filters by language",
 			repos: []github.Repository{
 				testutil.NewTestRepo(testutil.WithName("go-repo"), testutil.WithLanguage("Go")),
@@ -204,7 +184,7 @@ func TestFilterRepos(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filterRepos(tt.repos, tt.filter, tt.language)
+			result := filterRepos(tt.repos, tt.filter, tt.language, filterOpts{})
 			assert.Len(t, result, tt.wantLen)
 		})
 	}
@@ -221,7 +201,7 @@ func TestFilterRepos_PreservesRepoData(t *testing.T) {
 	)
 
 	repos := []github.Repository{original}
-	result := filterRepos(repos, FilterAll, "")
+	result := filterRepos(repos, FilterAll, "", filterOpts{})
 
 	require.Len(t, result, 1)
 	assert.Equal(t, "test-repo", result[0].Name)
@@ -499,4 +479,165 @@ func TestGetUniqueLanguages(t *testing.T) {
 			assert.Equal(t, tt.wantLangs, result)
 		})
 	}
+}
+
+func TestFilterRepos_VisibilityOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		repos   []github.Repository
+		opts    filterOpts
+		wantLen int
+	}{
+		{
+			name: "default hides private repos",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("public"), testutil.WithPrivate(false)),
+				testutil.NewTestRepo(testutil.WithName("private"), testutil.WithPrivate(true)),
+			},
+			opts:    filterOpts{showPrivate: false, showArchived: false},
+			wantLen: 1,
+		},
+		{
+			name: "showPrivate includes private repos",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("public"), testutil.WithPrivate(false)),
+				testutil.NewTestRepo(testutil.WithName("private"), testutil.WithPrivate(true)),
+			},
+			opts:    filterOpts{showPrivate: true, showArchived: false},
+			wantLen: 2,
+		},
+		{
+			name: "default hides archived repos",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("active")),
+				testutil.NewTestRepo(testutil.WithName("archived"), testutil.WithArchived(true)),
+			},
+			opts:    filterOpts{showPrivate: false, showArchived: false},
+			wantLen: 1,
+		},
+		{
+			name: "showArchived includes archived repos",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("active")),
+				testutil.NewTestRepo(testutil.WithName("archived"), testutil.WithArchived(true)),
+			},
+			opts:    filterOpts{showPrivate: false, showArchived: true},
+			wantLen: 2,
+		},
+		{
+			name: "all visibility options show all repos",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("public-active")),
+				testutil.NewTestRepo(testutil.WithName("private-active"), testutil.WithPrivate(true)),
+				testutil.NewTestRepo(testutil.WithName("public-archived"), testutil.WithArchived(true)),
+				testutil.NewTestRepo(testutil.WithName("private-archived"), testutil.WithPrivate(true), testutil.WithArchived(true)),
+			},
+			opts:    filterOpts{showPrivate: true, showArchived: true},
+			wantLen: 4,
+		},
+		{
+			name: "visibility works with content filters",
+			repos: []github.Repository{
+				testutil.NewTestRepo(testutil.WithName("old-public"), testutil.WithDaysInactive(400)),
+				testutil.NewTestRepo(testutil.WithName("old-private"), testutil.WithDaysInactive(400), testutil.WithPrivate(true)),
+				testutil.NewTestRepo(testutil.WithName("recent-public"), testutil.WithDaysInactive(100)),
+			},
+			opts:    filterOpts{showPrivate: false, showArchived: false},
+			wantLen: 1, // Only old-public matches (old filter + hidden private)
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Default to FilterAll for visibility tests, except for the combined test
+			filter := FilterAll
+			if tt.name == "visibility works with content filters" {
+				filter = FilterOld
+			}
+			result := filterRepos(tt.repos, filter, "", tt.opts)
+			assert.Len(t, result, tt.wantLen)
+		})
+	}
+}
+
+func TestGetVisibilityLabel(t *testing.T) {
+	tests := []struct {
+		name         string
+		showPrivate  bool
+		showArchived bool
+		want         string
+	}{
+		{
+			name:         "default shows Public Active",
+			showPrivate:  false,
+			showArchived: false,
+			want:         "Public Active",
+		},
+		{
+			name:         "showArchived shows Public All",
+			showPrivate:  false,
+			showArchived: true,
+			want:         "Public All",
+		},
+		{
+			name:         "showPrivate shows Including Private",
+			showPrivate:  true,
+			showArchived: false,
+			want:         "Including Private",
+		},
+		{
+			name:         "both shows All Repos",
+			showPrivate:  true,
+			showArchived: true,
+			want:         "All Repos",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				showPrivate:  tt.showPrivate,
+				showArchived: tt.showArchived,
+			}
+			assert.Equal(t, tt.want, m.getVisibilityLabel())
+		})
+	}
+}
+
+func TestToggleShowPrivate(t *testing.T) {
+	m := Model{
+		repos:        []github.Repository{testutil.NewTestRepo()},
+		showPrivate:  false,
+		showArchived: false,
+	}
+
+	// Initially false
+	assert.False(t, m.showPrivate)
+
+	// Toggle on
+	m.ToggleShowPrivate()
+	assert.True(t, m.showPrivate)
+
+	// Toggle off
+	m.ToggleShowPrivate()
+	assert.False(t, m.showPrivate)
+}
+
+func TestToggleShowArchived(t *testing.T) {
+	m := Model{
+		repos:        []github.Repository{testutil.NewTestRepo()},
+		showPrivate:  false,
+		showArchived: false,
+	}
+
+	// Initially false
+	assert.False(t, m.showArchived)
+
+	// Toggle on
+	m.ToggleShowArchived()
+	assert.True(t, m.showArchived)
+
+	// Toggle off
+	m.ToggleShowArchived()
+	assert.False(t, m.showArchived)
 }

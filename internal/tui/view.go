@@ -99,6 +99,7 @@ func (m Model) renderHeader() string {
 
 // renderFilters renders the filter bar with available filter options.
 func (m Model) renderFilters() string {
+	// Content filters (work on top of visibility)
 	filters := []struct {
 		key    string
 		label  string
@@ -108,10 +109,15 @@ func (m Model) renderFilters() string {
 		{"O", "Old", FilterOld},
 		{"N", "No Stars", FilterNoStars},
 		{"F", "Forks", FilterForks},
-		{"P", "Private", FilterPrivate},
 	}
 
 	var parts []string
+
+	// Show visibility state first (privacy-safe indicator)
+	visibilityLabel := m.getVisibilityLabel()
+	parts = append(parts, m.styles.ActiveFilter.Render(visibilityLabel))
+	parts = append(parts, " | ")
+
 	parts = append(parts, "Filters: ")
 
 	for i, f := range filters {
@@ -138,7 +144,40 @@ func (m Model) renderFilters() string {
 		parts = append(parts, m.styles.HelpDesc.Render(" [L]anguage"))
 	}
 
+	// Add visibility toggles section
+	parts = append(parts, " | ")
+
+	// Private visibility toggle
+	if m.showPrivate {
+		parts = append(parts, m.styles.ActiveFilter.Render("[P]+Private"))
+	} else {
+		parts = append(parts, m.styles.HelpDesc.Render("[P]rivate"))
+	}
+
+	parts = append(parts, " ")
+
+	// Archived visibility toggle
+	if m.showArchived {
+		parts = append(parts, m.styles.ActiveFilter.Render("[X]+Archived"))
+	} else {
+		parts = append(parts, m.styles.HelpDesc.Render("[X]Archived"))
+	}
+
 	return m.styles.FilterBar.Render(strings.Join(parts, ""))
+}
+
+// getVisibilityLabel returns a human-readable label for the current visibility state.
+func (m Model) getVisibilityLabel() string {
+	switch {
+	case !m.showPrivate && !m.showArchived:
+		return "Public Active"
+	case !m.showPrivate && m.showArchived:
+		return "Public All"
+	case m.showPrivate && !m.showArchived:
+		return "Including Private"
+	default: // m.showPrivate && m.showArchived
+		return "All Repos"
+	}
 }
 
 // renderSortBar renders the sort bar with available sort options.
