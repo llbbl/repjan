@@ -56,10 +56,10 @@ func TestGetMigrationVersion(t *testing.T) {
 	err = RunMigrations(db)
 	require.NoError(t, err)
 
-	// Check version - should be 2 after running both migrations
+	// Check version - should be 4 after running all migrations
 	version, err := GetMigrationVersion(db)
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), version, "migration version should be 2 after running all migrations")
+	assert.Equal(t, int64(4), version, "migration version should be 4 after running all migrations")
 }
 
 func TestClose_NilDB(t *testing.T) {
@@ -177,4 +177,156 @@ func TestMarkedReposTable_Index(t *testing.T) {
 	}
 
 	assert.Contains(t, indexes, "idx_marked_repos_owner")
+}
+
+func TestSyncHistoryTable_Exists(t *testing.T) {
+	db, err := Open(":memory:")
+	require.NoError(t, err)
+	defer Close(db)
+
+	err = RunMigrations(db)
+	require.NoError(t, err)
+
+	// Verify sync_history table exists by querying all expected columns
+	_, err = db.Exec(`SELECT id, owner, started_at, completed_at, status,
+		repos_fetched, repos_inserted, repos_updated, error_message, duration_ms
+		FROM sync_history LIMIT 1`)
+	assert.NoError(t, err, "sync_history table should exist with expected columns")
+}
+
+func TestSyncHistoryTable_Indexes(t *testing.T) {
+	db, err := Open(":memory:")
+	require.NoError(t, err)
+	defer Close(db)
+
+	err = RunMigrations(db)
+	require.NoError(t, err)
+
+	// Verify indexes exist by checking sqlite_master
+	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='sync_history'")
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var indexes []string
+	for rows.Next() {
+		var name string
+		err := rows.Scan(&name)
+		require.NoError(t, err)
+		indexes = append(indexes, name)
+	}
+
+	assert.Contains(t, indexes, "idx_sync_history_owner")
+	assert.Contains(t, indexes, "idx_sync_history_started_at")
+	assert.Contains(t, indexes, "idx_sync_history_owner_status")
+}
+
+func TestSyncHistoryTable_DefaultValues(t *testing.T) {
+	db, err := Open(":memory:")
+	require.NoError(t, err)
+	defer Close(db)
+
+	err = RunMigrations(db)
+	require.NoError(t, err)
+
+	// Insert with minimal fields to test defaults
+	result, err := db.Exec(`INSERT INTO sync_history (owner) VALUES ('test-owner')`)
+	require.NoError(t, err)
+
+	id, err := result.LastInsertId()
+	require.NoError(t, err)
+
+	// Verify default values
+	var status string
+	var reposFetched, reposInserted, reposUpdated int
+	err = db.QueryRow(`SELECT status, repos_fetched, repos_inserted, repos_updated FROM sync_history WHERE id = ?`, id).
+		Scan(&status, &reposFetched, &reposInserted, &reposUpdated)
+	require.NoError(t, err)
+
+	assert.Equal(t, "running", status, "default status should be 'running'")
+	assert.Equal(t, 0, reposFetched, "default repos_fetched should be 0")
+	assert.Equal(t, 0, reposInserted, "default repos_inserted should be 0")
+	assert.Equal(t, 0, reposUpdated, "default repos_updated should be 0")
+}
+
+func TestRepoChangesTable_Exists(t *testing.T) {
+	db, err := Open(":memory:")
+	require.NoError(t, err)
+	defer Close(db)
+
+	err = RunMigrations(db)
+	require.NoError(t, err)
+
+	// Verify repo_changes table exists by querying all expected columns
+	_, err = db.Exec(`SELECT id, owner, repo_name, action, performed_at, performed_by,
+		previous_state, new_state, notes
+		FROM repo_changes LIMIT 1`)
+	assert.NoError(t, err, "repo_changes table should exist with expected columns")
+}
+
+func TestRepoChangesTable_Indexes(t *testing.T) {
+	db, err := Open(":memory:")
+	require.NoError(t, err)
+	defer Close(db)
+
+	err = RunMigrations(db)
+	require.NoError(t, err)
+
+	// Verify indexes exist by checking sqlite_master
+	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='repo_changes'")
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var indexes []string
+	for rows.Next() {
+		var name string
+		err := rows.Scan(&name)
+		require.NoError(t, err)
+		indexes = append(indexes, name)
+	}
+
+	assert.Contains(t, indexes, "idx_repo_changes_owner")
+	assert.Contains(t, indexes, "idx_repo_changes_repo")
+	assert.Contains(t, indexes, "idx_repo_changes_action")
+	assert.Contains(t, indexes, "idx_repo_changes_performed_at")
+}
+
+func TestRepoChangesTable_DefaultValues(t *testing.T) {
+	db, err := Open(":memory:")
+	require.NoError(t, err)
+	defer Close(db)
+
+	err = RunMigrations(db)
+	require.NoError(t, err)
+
+	// Insert with minimal required fields to test defaults
+	result, err := db.Exec(`INSERT INTO repo_changes (owner, repo_name, action) VALUES ('test-owner', 'test-repo', 'archived')`)
+	require.NoError(t, err)
+
+	id, err := result.LastInsertId()
+	require.NoError(t, err)
+
+	// Verify default values
+	var performedBy string
+	err = db.QueryRow(`SELECT performed_by FROM repo_changes WHERE id = ?`, id).Scan(&performedBy)
+	require.NoError(t, err)
+
+	assert.Equal(t, "user", performedBy, "default performed_by should be 'user'")
+}
+
+func TestRepoChangesTable_NullableFields(t *testing.T) {
+	db, err := Open(":memory:")
+	require.NoError(t, err)
+	defer Close(db)
+
+	err = RunMigrations(db)
+	require.NoError(t, err)
+
+	// Insert without optional fields - should succeed
+	_, err = db.Exec(`INSERT INTO repo_changes (owner, repo_name, action) VALUES ('test-owner', 'test-repo', 'marked')`)
+	require.NoError(t, err, "insert without nullable fields should succeed")
+
+	// Insert with all fields including nullable ones
+	_, err = db.Exec(`INSERT INTO repo_changes (owner, repo_name, action, performed_by, previous_state, new_state, notes)
+		VALUES ('test-owner', 'test-repo', 'archived', 'system', '{"is_archived": false}', '{"is_archived": true}', 'User requested archive')`)
+	assert.NoError(t, err, "insert with all fields should succeed")
 }

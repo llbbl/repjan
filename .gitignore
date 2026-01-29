@@ -36,3 +36,7 @@ archived-repos-*.json
 # SQLite database
 *.db
 repjan.db
+
+# Environment files
+.env
+.env.local
