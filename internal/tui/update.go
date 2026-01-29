@@ -75,26 +75,28 @@ func (m Model) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyEnter:
-		// Apply search and exit search mode
+		// Keep search filter applied and exit search mode
 		m.searchMode = false
-		m.applySearchFilter()
 		return m, nil
 
 	case tea.KeyBackspace:
-		// Remove last character
+		// Remove last character and refresh for real-time filtering
 		if len(m.searchQuery) > 0 {
 			m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+			m.RefreshFilteredRepos()
 		}
 		return m, nil
 
 	case tea.KeyRunes:
-		// Add typed characters to search query
+		// Add typed characters to search query and refresh for real-time filtering
 		m.searchQuery += string(msg.Runes)
+		m.RefreshFilteredRepos()
 		return m, nil
 
 	case tea.KeySpace:
-		// Add space to search query
+		// Add space to search query and refresh for real-time filtering
 		m.searchQuery += " "
+		m.RefreshFilteredRepos()
 		return m, nil
 	}
 
@@ -103,6 +105,11 @@ func (m Model) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleModalKeys handles key input when a modal is active.
 func (m Model) handleModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle confirm modal specific keys first
+	if m.activeModal == ModalConfirm {
+		return m.handleConfirmModalKeys(msg)
+	}
+
 	switch msg.String() {
 	case "esc", "q":
 		// Close any modal
@@ -111,12 +118,6 @@ func (m Model) handleModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "enter":
-		// Handle confirmation in confirm modal
-		if m.activeModal == ModalConfirm {
-			// Archive marked repos - command will be returned by caller
-			m.activeModal = ModalNone
-			return m, m.archiveMarkedRepos()
-		}
 		// For other modals, just close
 		m.activeModal = ModalNone
 		m.selectedRepo = nil
@@ -134,6 +135,24 @@ func (m Model) handleModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.activeModal == ModalLanguage {
 			m.handleLanguageModalNav(-1)
 		}
+		return m, nil
+	}
+
+	return m, nil
+}
+
+// handleConfirmModalKeys handles key input for the archive confirmation modal.
+func (m Model) handleConfirmModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "Y", "y", "enter":
+		// Confirm archive operation
+		m.activeModal = ModalNone
+		return m, m.archiveMarkedRepos()
+
+	case "N", "n", "esc", "q":
+		// Cancel archive operation
+		m.activeModal = ModalNone
+		m.statusMessage = "Archive cancelled"
 		return m, nil
 	}
 

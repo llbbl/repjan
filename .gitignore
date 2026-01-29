@@ -11,3 +11,24 @@ docs/
 
 # Build artifacts
 /repjan
+cmd/repjan/repjan
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test/coverage
+*.test
+*.out
+coverage.*
+
+# Go workspace
+go.work
+go.work.sum
+
+# Vendor (optional)
+vendor/
+
+# App-generated files
+archived-repos-*.json

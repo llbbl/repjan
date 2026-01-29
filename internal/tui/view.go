@@ -42,21 +42,31 @@ func (m Model) View() string {
 
 	// Add search input if in search mode
 	if m.searchMode {
+		matchCount := len(m.filteredRepos)
 		searchBar := m.styles.FilterBar.Render(
-			fmt.Sprintf("Search: %s_", m.searchQuery),
+			fmt.Sprintf("/ %s (%d matches)_", m.searchQuery, matchCount),
 		)
 		sections = append([]string{sections[0], searchBar}, sections[1:]...)
 	}
 
 	view := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
-	// TODO: Modal overlay will be added here
+	// Render modal overlay if active
 	if m.activeModal != ModalNone {
-		// Placeholder for modal rendering
-		view = lipgloss.JoinVertical(lipgloss.Left,
-			view,
-			m.styles.ModalBorder.Render("Modal placeholder"),
-		)
+		var modalContent string
+		switch m.activeModal {
+		case ModalDetail:
+			modalContent = m.renderDetailModal()
+		case ModalConfirm:
+			modalContent = m.renderConfirmModal()
+		case ModalHelp:
+			modalContent = m.renderHelpModal()
+		case ModalLanguage:
+			modalContent = m.renderLanguageModal()
+		default:
+			modalContent = m.styles.ModalBorder.Render("Unknown modal")
+		}
+		view = lipgloss.JoinVertical(lipgloss.Left, view, modalContent)
 	}
 
 	return view

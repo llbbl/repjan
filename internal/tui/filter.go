@@ -86,6 +86,22 @@ func sortRepos(repos []github.Repository, field SortField, ascending bool) []git
 	return result
 }
 
+// searchRepos returns a filtered slice of repositories matching the search query.
+// The search is case-insensitive and matches against the repository name.
+func searchRepos(repos []github.Repository, query string) []github.Repository {
+	if query == "" {
+		return repos
+	}
+	query = strings.ToLower(query)
+	var result []github.Repository
+	for _, repo := range repos {
+		if strings.Contains(strings.ToLower(repo.Name), query) {
+			result = append(result, repo)
+		}
+	}
+	return result
+}
+
 // getUniqueLanguages returns a sorted slice of unique languages from the repositories.
 // Empty languages are excluded from the result.
 func getUniqueLanguages(repos []github.Repository) []string {
@@ -130,16 +146,19 @@ func (m *Model) ToggleSortDirection() {
 	m.RefreshFilteredRepos()
 }
 
-// RefreshFilteredRepos applies the current filter and sort to the repos.
+// RefreshFilteredRepos applies the current filter, search, and sort to the repos.
 func (m *Model) RefreshFilteredRepos() {
+	// Apply filter first
 	filtered := filterRepos(m.repos, m.currentFilter, m.languageFilter)
+	// Then apply search
+	if m.searchQuery != "" {
+		filtered = searchRepos(filtered, m.searchQuery)
+	}
+	// Then sort
 	m.filteredRepos = sortRepos(filtered, m.sortField, m.sortAscending)
 
 	// Reset cursor if it's out of bounds
 	if m.cursor >= len(m.filteredRepos) {
-		m.cursor = len(m.filteredRepos) - 1
-	}
-	if m.cursor < 0 {
-		m.cursor = 0
+		m.cursor = max(0, len(m.filteredRepos)-1)
 	}
 }
