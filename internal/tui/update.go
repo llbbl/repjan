@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -20,6 +21,10 @@ const reservedRows = 8
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Always handle Ctrl+C regardless of mode - ensures user can quit
+		if msg.Type == tea.KeyCtrlC {
+			return m, tea.Quit
+		}
 		return m.handleKeyMsg(msg)
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -123,9 +128,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Background sync has started
 		m.syncing = true
 		m.statusMessage = "Syncing repositories..."
-		// Continue listening for more sync messages
+		// Start spinner and continue listening for more sync messages
+		cmds := []tea.Cmd{m.syncSpinner.Tick}
 		if m.syncCh != nil {
-			return m, m.listenForSyncMsgs()
+			cmds = append(cmds, m.listenForSyncMsgs())
+		}
+		return m, tea.Batch(cmds...)
+	case spinner.TickMsg:
+		// Update spinner animation when syncing
+		if m.syncing {
+			var cmd tea.Cmd
+			m.syncSpinner, cmd = m.syncSpinner.Update(msg)
+			return m, cmd
 		}
 	case ReposSyncedMsg:
 		// Handle sync updates from background syncer

@@ -3,7 +3,14 @@
 
 package github
 
-import "os/exec"
+import (
+	"context"
+	"os/exec"
+	"time"
+)
+
+// DefaultTimeout is the default timeout for command execution.
+const DefaultTimeout = 60 * time.Second
 
 // CommandExecutor is an interface for running shell commands.
 // This abstraction enables mocking in tests without hitting real external commands.
@@ -12,9 +19,20 @@ type CommandExecutor interface {
 }
 
 // RealExecutor implements CommandExecutor using os/exec.
-type RealExecutor struct{}
+type RealExecutor struct {
+	Timeout time.Duration
+}
 
 // Execute runs the command and returns its combined output.
+// Commands are executed with a timeout to prevent indefinite blocking.
 func (r *RealExecutor) Execute(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).Output()
+	timeout := r.Timeout
+	if timeout == 0 {
+		timeout = DefaultTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	return exec.CommandContext(ctx, name, args...).Output()
 }
