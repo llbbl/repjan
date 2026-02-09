@@ -1,6 +1,25 @@
 # Agent Instructions
 
 
+## Git Workflow
+
+**ALWAYS work in feature branches, not main.**
+
+- New features: `feat/<description>` (e.g., `feat/add-spinner`)
+- Bug fixes: `fix/<description>` (e.g., `fix/tui-freeze`)
+- Refactoring: `refactor/<description>`
+- Multiple changes: `fix/<primary-change>-and-<secondary>` or descriptive name
+
+**Workflow:**
+1. Create feature branch from main: `git checkout -b feat/my-feature`
+2. Make changes and commit using commit-manager agent
+3. Create PR when ready for review/merge
+4. Merge to main via PR (not direct commits)
+
+**Direct commits to main are only allowed for:**
+- Emergency hotfixes
+- Documentation-only changes (optional)
+
 
 ## License Header
 
@@ -76,6 +95,21 @@ ci: add GitHub Actions release workflow
 
 **Version Tags:**
 Use semver format without `v` prefix: `0.1.0`, `1.2.3` (not `v0.1.0`)
+
+
+## Build System
+
+This project uses **just** (not make). Run `just` to see available commands:
+
+```bash
+just build         # Build binary
+just test          # Run tests
+just lint          # Run linter
+just check         # Run lint + test
+just show-version  # Show current version
+just bump-patch    # Bump patch version and create tag
+just release-patch # Bump, tag, and push
+```
 
 
 ## TUI Defaults

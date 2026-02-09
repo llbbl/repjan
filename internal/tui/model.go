@@ -7,6 +7,7 @@ package tui
 import (
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/llbbl/repjan/internal/github"
@@ -95,6 +96,7 @@ type Model struct {
 	archiveState    *archiveState       // tracks ongoing archive operation
 	archiveMode     string              // "archive" or "unarchive" mode for modal
 	syncing         bool                // whether a sync operation is in progress
+	syncSpinner     spinner.Model       // animated spinner for sync operations
 	lastSyncTime    time.Time           // when repos were last synced from GitHub
 	usingCache      bool                // whether we're showing cached data
 	syncCh          <-chan sync.SyncMsg // channel for receiving sync messages
@@ -157,6 +159,11 @@ type ReposSyncedMsg struct {
 // NewModel creates a new TUI model with the provided repositories and configuration.
 // By default, private and archived repositories are hidden for privacy safety.
 func NewModel(repos []github.Repository, owner string, client *github.Client, fabricEnabled bool, fabricPath string, syncCh <-chan sync.SyncMsg) Model {
+	// Initialize spinner for sync operations
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = DefaultStyles().HelpKey
+
 	m := Model{
 		repos:         repos,
 		owner:         owner,
@@ -169,6 +176,7 @@ func NewModel(repos []github.Repository, owner string, client *github.Client, fa
 		fabricEnabled: fabricEnabled,
 		fabricPath:    fabricPath,
 		syncCh:        syncCh,
+		syncSpinner:   s,
 		lastSyncTime:  time.Now(),
 		styles:        DefaultStyles(),
 		// showPrivate and showArchived default to false (Go zero values)

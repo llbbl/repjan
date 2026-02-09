@@ -315,8 +315,8 @@ func (m Model) renderStatusBar() string {
 		archiveStatus := fmt.Sprintf("%s %d/%d repositories...", action, m.archiveProgress, m.archiveTotal)
 		parts = append(parts, m.styles.Warning.Render(archiveStatus))
 	} else if m.syncing {
-		// Show syncing indicator
-		parts = append(parts, m.styles.HelpKey.Render("Syncing..."))
+		// Show animated syncing indicator
+		parts = append(parts, m.styles.HelpKey.Render(m.syncSpinner.View()+" Syncing..."))
 	} else {
 		// Show last sync time
 		syncStatus := m.formatSyncStatus()
