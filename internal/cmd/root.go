@@ -157,6 +157,9 @@ var versionCmd = &cobra.Command{
 }
 
 func init() {
+	// Enable --version flag
+	rootCmd.Version = Version
+
 	// Define flags on root command
 	rootCmd.PersistentFlags().StringVarP(&owner, "owner", "o", "", "GitHub username or org to audit")
 	rootCmd.PersistentFlags().BoolVarP(&fabric, "fabric", "f", false, "Enable Fabric AI integration")
