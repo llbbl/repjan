@@ -52,6 +52,30 @@ clean:
 # Run all checks (lint + test)
 check: lint test
 
+# Ship current feature branch: check, sync beads, commit, and push
+# Usage: just ship "chore(scope): description"
+ship message:
+    #!/bin/sh
+    set -e
+    BRANCH=$(git branch --show-current)
+    if [ "$BRANCH" = "main" ]; then
+        echo "Refusing to ship from main. Use a feature branch."
+        exit 1
+    fi
+    if ! printf '%s' "{{message}}" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|chore|ci|deps)(\([a-z0-9._/-]+\))?: .+'; then
+        echo "Commit message must use conventional commit format: type(scope): description"
+        exit 1
+    fi
+    just check
+    bd sync
+    git add -A
+    if git diff --cached --quiet; then
+        echo "No staged changes to commit."
+        exit 1
+    fi
+    git commit -m "{{message}}"
+    git push -u origin "$BRANCH"
+
 # Generate full changelog
 changelog:
     git cliff -o CHANGELOG.md
