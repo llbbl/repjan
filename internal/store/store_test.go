@@ -22,7 +22,7 @@ func setupTestStore(t *testing.T) *Store {
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		db.Close(database)
+		_ = db.Close(database)
 	})
 
 	err = db.RunMigrations(database)

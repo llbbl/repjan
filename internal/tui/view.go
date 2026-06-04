@@ -49,7 +49,9 @@ func (m Model) View() string {
 	// Join with explicit newlines to ensure all sections show
 	view := strings.Join(sections, "\n")
 
-	// Render modal overlay if active
+	// Render modal centered in the terminal when active. Replace the body view
+	// rather than appending below it - lipgloss has no true z-index overlay,
+	// and appending pushed the modal off-screen on normal-height terminals.
 	if m.activeModal != ModalNone {
 		var modalContent string
 		switch m.activeModal {
@@ -64,7 +66,17 @@ func (m Model) View() string {
 		default:
 			modalContent = m.styles.ModalBorder.Render("Unknown modal")
 		}
-		view = lipgloss.JoinVertical(lipgloss.Left, view, modalContent)
+
+		// Fall back to sensible defaults if width/height are uninitialized
+		// (e.g. before the first WindowSizeMsg has been received).
+		w, h := m.width, m.height
+		if w <= 0 {
+			w = lipgloss.Width(modalContent)
+		}
+		if h <= 0 {
+			h = lipgloss.Height(modalContent)
+		}
+		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, modalContent)
 	}
 
 	return view
@@ -204,7 +216,7 @@ func (m Model) renderTableBody() string {
 			style = m.styles.SelectedRow
 		}
 
-		repoKey := fmt.Sprintf("%s/%s", repo.Owner, repo.Name)
+		repoKey := repo.FullName()
 		if m.marked[repoKey] {
 			// When archiving is in progress, show archiving style for marked repos
 			if m.archiving {
@@ -262,40 +274,63 @@ func (m Model) renderTableBody() string {
 }
 
 // renderFooter renders the footer with keybinding hints and sync status.
+// Per CLAUDE.md, every bound key must be visible. The hints are split across
+// two lines (navigation/actions on line 1, filters/sort/meta on line 2) so
+// the full set fits on typical terminal widths without horizontal overflow.
 func (m Model) renderFooter() string {
-	bindings := []struct {
+	// Line 1: navigation + per-row actions
+	line1 := []struct {
 		key  string
 		desc string
 	}{
 		{"j/k", "navigate"},
 		{"pgup/pgdn", "page"},
+		{"g/G", "top/bottom"},
 		{"space", "mark"},
+		{"A/U", "mark all/none"},
 		{"enter", "details"},
-		{"/", "search"},
-		{"p", "private"},
-		{"x", "archived"},
 		{"a", "archive marked"},
+		{"e", "export"},
 		{"q", "quit"},
 	}
 
-	var parts []string
-	for i, b := range bindings {
-		key := m.styles.HelpKey.Render(b.key)
-		desc := m.styles.HelpDesc.Render(b.desc)
-		parts = append(parts, fmt.Sprintf("%s %s", key, desc))
-		if i < len(bindings)-1 {
-			parts = append(parts, m.styles.HelpDesc.Render(" | "))
-		}
+	// Line 2: filters, sort, meta
+	line2 := []struct {
+		key  string
+		desc string
+	}{
+		{"/", "search"},
+		{"1-4", "sort"},
+		{"a/o/n/f", "filter all/old/no-stars/forks"},
+		{"l", "language"},
+		{"p", "private"},
+		{"x", "archived"},
+		{"?", "help"},
 	}
 
-	keybindings := strings.Join(parts, "")
+	formatLine := func(bindings []struct {
+		key  string
+		desc string
+	}) string {
+		var parts []string
+		for i, b := range bindings {
+			key := m.styles.HelpKey.Render(b.key)
+			desc := m.styles.HelpDesc.Render(b.desc)
+			parts = append(parts, fmt.Sprintf("%s %s", key, desc))
+			if i < len(bindings)-1 {
+				parts = append(parts, m.styles.HelpDesc.Render(" | "))
+			}
+		}
+		return strings.Join(parts, "")
+	}
 
 	// Build status bar with sync info
 	statusBar := m.renderStatusBar()
 
-	// Combine keybindings and status bar
+	// Combine keybindings (two lines) and status bar
 	footer := lipgloss.JoinVertical(lipgloss.Left,
-		m.styles.FilterBar.Render(keybindings),
+		m.styles.FilterBar.Render(formatLine(line1)),
+		m.styles.FilterBar.Render(formatLine(line2)),
 		statusBar,
 	)
 

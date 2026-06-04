@@ -13,7 +13,7 @@ import (
 func TestOpen_InMemory(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	// Verify connection works
 	err = db.Ping()
@@ -23,7 +23,7 @@ func TestOpen_InMemory(t *testing.T) {
 func TestRunMigrations_CreatesRepositoriesTable(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	// Run migrations
 	err = RunMigrations(db)
@@ -37,7 +37,7 @@ func TestRunMigrations_CreatesRepositoriesTable(t *testing.T) {
 func TestRunMigrations_Idempotent(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	// Run migrations twice - should not error
 	err = RunMigrations(db)
@@ -50,7 +50,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 func TestGetMigrationVersion(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	// Run migrations
 	err = RunMigrations(db)
@@ -78,7 +78,7 @@ func TestGetDefaultDBPath(t *testing.T) {
 func TestRepositoriesTable_Indexes(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)
@@ -86,7 +86,7 @@ func TestRepositoriesTable_Indexes(t *testing.T) {
 	// Verify indexes exist by checking sqlite_master
 	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='repositories'")
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var indexes []string
 	for rows.Next() {
@@ -103,7 +103,7 @@ func TestRepositoriesTable_Indexes(t *testing.T) {
 func TestRepositoriesTable_UniqueConstraints(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestRepositoriesTable_UniqueConstraints(t *testing.T) {
 func TestMarkedReposTable_Exists(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)
@@ -137,7 +137,7 @@ func TestMarkedReposTable_Exists(t *testing.T) {
 func TestMarkedReposTable_UniqueConstraint(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)
@@ -158,7 +158,7 @@ func TestMarkedReposTable_UniqueConstraint(t *testing.T) {
 func TestMarkedReposTable_Index(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)
@@ -166,7 +166,7 @@ func TestMarkedReposTable_Index(t *testing.T) {
 	// Verify index exists by checking sqlite_master
 	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='marked_repos'")
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var indexes []string
 	for rows.Next() {
@@ -182,7 +182,7 @@ func TestMarkedReposTable_Index(t *testing.T) {
 func TestSyncHistoryTable_Exists(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)
@@ -197,7 +197,7 @@ func TestSyncHistoryTable_Exists(t *testing.T) {
 func TestSyncHistoryTable_Indexes(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)
@@ -205,7 +205,7 @@ func TestSyncHistoryTable_Indexes(t *testing.T) {
 	// Verify indexes exist by checking sqlite_master
 	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='sync_history'")
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var indexes []string
 	for rows.Next() {
@@ -223,7 +223,7 @@ func TestSyncHistoryTable_Indexes(t *testing.T) {
 func TestSyncHistoryTable_DefaultValues(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)
@@ -251,7 +251,7 @@ func TestSyncHistoryTable_DefaultValues(t *testing.T) {
 func TestRepoChangesTable_Exists(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)
@@ -266,7 +266,7 @@ func TestRepoChangesTable_Exists(t *testing.T) {
 func TestRepoChangesTable_Indexes(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)
@@ -274,7 +274,7 @@ func TestRepoChangesTable_Indexes(t *testing.T) {
 	// Verify indexes exist by checking sqlite_master
 	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='repo_changes'")
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var indexes []string
 	for rows.Next() {
@@ -293,7 +293,7 @@ func TestRepoChangesTable_Indexes(t *testing.T) {
 func TestRepoChangesTable_DefaultValues(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)
@@ -316,7 +316,7 @@ func TestRepoChangesTable_DefaultValues(t *testing.T) {
 func TestRepoChangesTable_NullableFields(t *testing.T) {
 	db, err := Open(":memory:")
 	require.NoError(t, err)
-	defer Close(db)
+	defer func() { _ = Close(db) }()
 
 	err = RunMigrations(db)
 	require.NoError(t, err)

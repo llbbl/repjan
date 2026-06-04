@@ -6,6 +6,7 @@ package sync
 
 import (
 	"log/slog"
+	stdsync "sync"
 	"time"
 
 	"github.com/llbbl/repjan/internal/github"
@@ -45,6 +46,7 @@ type Syncer struct {
 	interval time.Duration
 	stopCh   chan struct{}
 	msgCh    chan SyncMsg
+	stopOnce stdsync.Once
 }
 
 // New creates a new Syncer with the given configuration.
@@ -67,8 +69,11 @@ func (s *Syncer) Start() <-chan SyncMsg {
 }
 
 // Stop stops the background sync and closes the message channel.
+// Safe to call multiple times; subsequent calls are no-ops.
 func (s *Syncer) Stop() {
-	close(s.stopCh)
+	s.stopOnce.Do(func() {
+		close(s.stopCh)
+	})
 }
 
 // SyncOnce performs a single sync and returns the result.

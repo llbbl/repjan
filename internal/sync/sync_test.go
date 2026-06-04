@@ -40,3 +40,26 @@ func TestSyncResult_DefaultValues(t *testing.T) {
 	// Default error should be nil
 	assert.Nil(t, result.Error)
 }
+
+func TestStopIdempotent(t *testing.T) {
+	// Construct a Syncer directly without New() so we don't need real
+	// store/client deps; Stop only operates on stopCh + stopOnce.
+	s := &Syncer{
+		stopCh: make(chan struct{}),
+		msgCh:  make(chan SyncMsg, 1),
+	}
+
+	assert.NotPanics(t, func() {
+		s.Stop()
+		s.Stop()
+		s.Stop()
+	}, "Stop must be safe to call multiple times")
+
+	// stopCh should be closed after Stop.
+	select {
+	case _, ok := <-s.stopCh:
+		assert.False(t, ok, "stopCh should be closed")
+	default:
+		t.Fatal("stopCh should be closed and readable")
+	}
+}

@@ -54,7 +54,7 @@ func (s *Store) UpsertRepositories(owner string, repos []github.Repository) erro
 	if err != nil {
 		return fmt.Errorf("preparing statement: %w", err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	now := formatTimeForSQLite(time.Now())
 	for _, repo := range repos {
@@ -114,7 +114,7 @@ func (s *Store) GetRepositories(owner string) ([]github.Repository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying repositories: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var repos []github.Repository
 	for rows.Next() {
@@ -372,7 +372,7 @@ func (s *Store) SaveMarkedRepos(owner string, repoNames []string) error {
 		if err != nil {
 			return fmt.Errorf("preparing statement: %w", err)
 		}
-		defer stmt.Close()
+		defer func() { _ = stmt.Close() }()
 
 		for _, name := range repoNames {
 			_, err := stmt.Exec(owner, name)
@@ -397,7 +397,7 @@ func (s *Store) GetMarkedRepos(owner string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying marked repos: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var names []string
 	for rows.Next() {
@@ -459,19 +459,23 @@ type RepoChange struct {
 
 // RecordRepoChange records a modification to a repository.
 // prevState and newState can be any JSON-serializable value (or nil).
-func (s *Store) RecordRepoChange(owner, repoName, action, performedBy string, prevState, newState interface{}, notes string) error {
+func (s *Store) RecordRepoChange(owner, repoName, action, performedBy string, prevState, newState any, notes string) error {
 	slog.Debug("recording repo change", "component", "store", "owner", owner, "repo", repoName, "action", action)
 
 	var prevJSON, newJSON string
 	if prevState != nil {
-		if data, err := json.Marshal(prevState); err == nil {
-			prevJSON = string(data)
+		data, err := json.Marshal(prevState)
+		if err != nil {
+			return fmt.Errorf("marshaling previous state: %w", err)
 		}
+		prevJSON = string(data)
 	}
 	if newState != nil {
-		if data, err := json.Marshal(newState); err == nil {
-			newJSON = string(data)
+		data, err := json.Marshal(newState)
+		if err != nil {
+			return fmt.Errorf("marshaling new state: %w", err)
 		}
+		newJSON = string(data)
 	}
 
 	_, err := s.db.Exec(`
@@ -498,7 +502,7 @@ func (s *Store) GetRepoHistory(owner, repoName string, limit int) ([]RepoChange,
 	if err != nil {
 		return nil, fmt.Errorf("querying repo history: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanRepoChanges(rows)
 }
@@ -515,7 +519,7 @@ func (s *Store) GetRecentChanges(owner string, limit int) ([]RepoChange, error) 
 	if err != nil {
 		return nil, fmt.Errorf("querying recent changes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanRepoChanges(rows)
 }
@@ -532,7 +536,7 @@ func (s *Store) GetChangesByAction(owner, action string, limit int) ([]RepoChang
 	if err != nil {
 		return nil, fmt.Errorf("querying changes by action: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanRepoChanges(rows)
 }
@@ -695,7 +699,7 @@ func (s *Store) GetSyncHistory(owner string, limit int) ([]SyncRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying sync history: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []SyncRecord
 	for rows.Next() {

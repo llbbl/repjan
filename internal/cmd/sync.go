@@ -4,15 +4,14 @@
 package cmd
 
 import (
-	"database/sql"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/llbbl/repjan/internal/db"
 	"github.com/llbbl/repjan/internal/github"
+	"github.com/llbbl/repjan/internal/store"
 )
 
 var syncCmd = &cobra.Command{
@@ -50,7 +49,7 @@ If --owner is not specified, uses the authenticated GitHub user.`,
 			slog.Error("failed to open database", "component", "cmd", "path", dbPath, "error", err)
 			return fmt.Errorf("opening database: %w", err)
 		}
-		defer db.Close(database)
+		defer func() { _ = db.Close(database) }()
 
 		// Ensure migrations are run
 		slog.Debug("running migrations", "component", "cmd")
@@ -70,16 +69,17 @@ If --owner is not specified, uses the authenticated GitHub user.`,
 		fmt.Printf("Found %d repositories\n", len(repos))
 		slog.Debug("fetched repositories", "component", "cmd", "count", len(repos))
 
-		// Upsert repositories to database
+		// Upsert repositories to database via the store layer so writes use the
+		// same time format the store reads back (see store.formatTimeForSQLite).
 		slog.Debug("upserting repositories to database", "component", "cmd", "count", len(repos))
-		inserted, updated, err := upsertRepositories(database, repos)
-		if err != nil {
+		s := store.New(database)
+		if err := s.UpsertRepositories(targetOwner, repos); err != nil {
 			slog.Error("failed to upsert repositories", "component", "cmd", "error", err)
 			return fmt.Errorf("upserting repositories: %w", err)
 		}
 
-		fmt.Printf("Sync complete: %d inserted, %d updated\n", inserted, updated)
-		slog.Debug("sync completed", "component", "cmd", "inserted", inserted, "updated", updated)
+		fmt.Printf("Sync complete: %d repositories synced\n", len(repos))
+		slog.Debug("sync completed", "component", "cmd", "synced", len(repos))
 		return nil
 	},
 }
@@ -87,89 +87,4 @@ If --owner is not specified, uses the authenticated GitHub user.`,
 func init() {
 	// The --owner flag is already defined on rootCmd as a persistent flag
 	// so it's inherited by all subcommands including sync
-}
-
-// upsertRepositories inserts or updates repositories in the database.
-// Returns the count of inserted and updated repositories.
-func upsertRepositories(database *sql.DB, repos []github.Repository) (inserted, updated int, err error) {
-	// Prepare upsert statement
-	// SQLite's INSERT OR REPLACE with UNIQUE constraint handles upsert
-	stmt, err := database.Prepare(`
-		INSERT INTO repositories (
-			owner, name, full_name, description, stars, forks,
-			is_archived, is_fork, is_private, primary_language,
-			pushed_at, created_at, days_since_activity, synced_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(owner, name) DO UPDATE SET
-			full_name = excluded.full_name,
-			description = excluded.description,
-			stars = excluded.stars,
-			forks = excluded.forks,
-			is_archived = excluded.is_archived,
-			is_fork = excluded.is_fork,
-			is_private = excluded.is_private,
-			primary_language = excluded.primary_language,
-			pushed_at = excluded.pushed_at,
-			created_at = excluded.created_at,
-			days_since_activity = excluded.days_since_activity,
-			synced_at = excluded.synced_at
-	`)
-	if err != nil {
-		return 0, 0, fmt.Errorf("preparing statement: %w", err)
-	}
-	defer stmt.Close()
-
-	syncTime := time.Now()
-
-	for _, repo := range repos {
-		result, err := stmt.Exec(
-			repo.Owner,
-			repo.Name,
-			repo.FullName(),
-			repo.Description,
-			repo.StargazerCount,
-			repo.ForkCount,
-			repo.IsArchived,
-			repo.IsFork,
-			repo.IsPrivate,
-			repo.PrimaryLanguage,
-			repo.PushedAt,
-			repo.CreatedAt,
-			repo.DaysSinceActivity,
-			syncTime,
-		)
-		if err != nil {
-			return inserted, updated, fmt.Errorf("executing upsert for %s: %w", repo.FullName(), err)
-		}
-
-		rowsAffected, err := result.RowsAffected()
-		if err != nil {
-			return inserted, updated, fmt.Errorf("getting rows affected: %w", err)
-		}
-
-		// SQLite ON CONFLICT DO UPDATE always returns 1 for affected rows
-		// We need to check if it was an insert or update by checking LastInsertId
-		lastID, err := result.LastInsertId()
-		if err != nil {
-			return inserted, updated, fmt.Errorf("getting last insert id: %w", err)
-		}
-
-		if rowsAffected > 0 {
-			// If lastID > 0 and it's a new row, it was an insert
-			// This is a simplification - for accurate counts we'd need to check if row existed before
-			// For now, we'll count based on whether the sync is adding new data
-			if lastID > 0 {
-				inserted++
-			} else {
-				updated++
-			}
-		}
-	}
-
-	// Adjust counts - the above logic isn't perfect for distinguishing insert vs update
-	// Let's use a simpler approach: just report total synced
-	// Actually, let's keep the current behavior but note it may not be 100% accurate
-	// A more accurate approach would require querying existence first
-
-	return inserted, updated, nil
 }
