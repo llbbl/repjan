@@ -10,22 +10,6 @@ import (
 	"github.com/llbbl/repjan/internal/github"
 )
 
-// Heuristics analyzes repositories using various heuristics.
-type Heuristics struct {
-	// TODO: Add configuration fields
-}
-
-// NewHeuristics creates a new Heuristics analyzer.
-func NewHeuristics() *Heuristics {
-	return &Heuristics{}
-}
-
-// Analyze runs heuristic analysis on a repository.
-func (h *Heuristics) Analyze(repo *github.Repository) error {
-	// TODO: Implement heuristic analysis
-	return nil
-}
-
 // legacyLanguages contains languages considered legacy/outdated.
 var legacyLanguages = map[string]bool{
 	"php":          true,

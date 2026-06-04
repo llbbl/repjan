@@ -43,7 +43,7 @@ var dbMigrateCmd = &cobra.Command{
 			slog.Error("failed to open database", "component", "cmd", "path", dbPath, "error", err)
 			return fmt.Errorf("opening database: %w", err)
 		}
-		defer db.Close(database)
+		defer func() { _ = db.Close(database) }()
 
 		// Get version before migration
 		versionBefore, _ := db.GetMigrationVersion(database)
@@ -98,7 +98,7 @@ var dbStatusCmd = &cobra.Command{
 			slog.Error("failed to open database", "component", "cmd", "path", dbPath, "error", err)
 			return fmt.Errorf("opening database: %w", err)
 		}
-		defer db.Close(database)
+		defer func() { _ = db.Close(database) }()
 
 		// Get migration version
 		version, err := db.GetMigrationVersion(database)
@@ -204,7 +204,7 @@ This is a destructive operation that will delete all stored data.`,
 			slog.Error("failed to create database", "component", "cmd", "path", dbPath, "error", err)
 			return fmt.Errorf("creating database: %w", err)
 		}
-		defer db.Close(database)
+		defer func() { _ = db.Close(database) }()
 
 		if err := db.RunMigrations(database); err != nil {
 			slog.Error("migration failed", "component", "cmd", "error", err)

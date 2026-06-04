@@ -13,9 +13,9 @@ import (
 )
 
 // reservedRows is the number of rows reserved for UI chrome (not available for table content).
-// This includes: header line, filter line, sort bar, table header, footer keybindings,
-// status bar, and vertical margins/padding.
-const reservedRows = 8
+// This includes: header line, filter line, sort bar, table header, two footer
+// keybinding lines, status bar, and vertical margins/padding.
+const reservedRows = 9
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -50,8 +50,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.archiveTotal = msg.Total
 		if msg.Err != nil {
 			m.lastError = msg.Err
-		} else if msg.RepoName != "" {
-			// Operation succeeded - update the repo's IsArchived field based on mode
+		}
+		// Only flip IsArchived in the in-memory model when the gh CLI call
+		// actually succeeded. A failed archive/unarchive still carries a
+		// RepoName for context/logging, but the visible state must not lie:
+		// marking on failure would cause clearArchivedMarks to silently drop
+		// the mark and present a failed op as successful.
+		if msg.Err == nil && msg.RepoName != "" {
 			if m.archiveMode == "unarchive" {
 				m.markRepoAsUnarchived(msg.RepoName)
 			} else {
@@ -579,14 +584,6 @@ func (m *Model) handleLanguageModalNav(delta int) {
 		newPos = len(m.languages) - 1
 	}
 	m.languageCursor = newPos
-}
-
-// applySearchFilter filters repos based on the current search query.
-func (m *Model) applySearchFilter() {
-	// The search is applied by refreshing filtered repos
-	// The filter.go functions should be extended to include search
-	// For now, we trigger a refresh which will apply current filters
-	m.RefreshFilteredRepos()
 }
 
 // archiveMarkedRepos returns a command to archive all marked repositories.

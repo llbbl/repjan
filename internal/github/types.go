@@ -5,6 +5,7 @@ package github
 
 import (
 	"encoding/json"
+	"math"
 	"time"
 )
 
@@ -91,5 +92,5 @@ func (r *Repository) CalculateDaysSinceActivity() {
 		return
 	}
 	duration := time.Since(r.PushedAt)
-	r.DaysSinceActivity = int(duration.Hours() / 24)
+	r.DaysSinceActivity = max(0, int(math.Round(duration.Hours()/24)))
 }

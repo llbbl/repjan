@@ -14,10 +14,10 @@ import (
 
 func TestLoad_Defaults(t *testing.T) {
 	// Clear any env vars that might affect the test
-	os.Unsetenv("REPJAN_LOG_LEVEL")
-	os.Unsetenv("REPJAN_LOG_FORMAT")
-	os.Unsetenv("REPJAN_SYNC_INTERVAL")
-	os.Unsetenv("REPJAN_DB_PATH")
+	_ = os.Unsetenv("REPJAN_LOG_LEVEL")
+	_ = os.Unsetenv("REPJAN_LOG_FORMAT")
+	_ = os.Unsetenv("REPJAN_SYNC_INTERVAL")
+	_ = os.Unsetenv("REPJAN_DB_PATH")
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -29,17 +29,11 @@ func TestLoad_Defaults(t *testing.T) {
 }
 
 func TestLoad_EnvVars(t *testing.T) {
-	// Set env vars
-	os.Setenv("REPJAN_LOG_LEVEL", "debug")
-	os.Setenv("REPJAN_LOG_FORMAT", "json")
-	os.Setenv("REPJAN_SYNC_INTERVAL", "30s")
-	os.Setenv("REPJAN_DB_PATH", "/custom/path/test.db")
-	defer func() {
-		os.Unsetenv("REPJAN_LOG_LEVEL")
-		os.Unsetenv("REPJAN_LOG_FORMAT")
-		os.Unsetenv("REPJAN_SYNC_INTERVAL")
-		os.Unsetenv("REPJAN_DB_PATH")
-	}()
+	// Set env vars (t.Setenv auto-restores on test cleanup)
+	t.Setenv("REPJAN_LOG_LEVEL", "debug")
+	t.Setenv("REPJAN_LOG_FORMAT", "json")
+	t.Setenv("REPJAN_SYNC_INTERVAL", "30s")
+	t.Setenv("REPJAN_DB_PATH", "/custom/path/test.db")
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -51,8 +45,7 @@ func TestLoad_EnvVars(t *testing.T) {
 }
 
 func TestLoad_InvalidLogLevel(t *testing.T) {
-	os.Setenv("REPJAN_LOG_LEVEL", "invalid")
-	defer os.Unsetenv("REPJAN_LOG_LEVEL")
+	t.Setenv("REPJAN_LOG_LEVEL", "invalid")
 
 	cfg, err := Load()
 	assert.Nil(t, cfg)
@@ -61,8 +54,7 @@ func TestLoad_InvalidLogLevel(t *testing.T) {
 }
 
 func TestLoad_InvalidLogFormat(t *testing.T) {
-	os.Setenv("REPJAN_LOG_FORMAT", "xml")
-	defer os.Unsetenv("REPJAN_LOG_FORMAT")
+	t.Setenv("REPJAN_LOG_FORMAT", "xml")
 
 	cfg, err := Load()
 	assert.Nil(t, cfg)
@@ -71,8 +63,7 @@ func TestLoad_InvalidLogFormat(t *testing.T) {
 }
 
 func TestLoad_InvalidDuration_UsesDefault(t *testing.T) {
-	os.Setenv("REPJAN_SYNC_INTERVAL", "not-a-duration")
-	defer os.Unsetenv("REPJAN_SYNC_INTERVAL")
+	t.Setenv("REPJAN_SYNC_INTERVAL", "not-a-duration")
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -82,10 +73,8 @@ func TestLoad_InvalidDuration_UsesDefault(t *testing.T) {
 }
 
 func TestLoad_AllLogLevels(t *testing.T) {
-	defer os.Unsetenv("REPJAN_LOG_LEVEL")
-
 	for _, level := range validLogLevels {
-		os.Setenv("REPJAN_LOG_LEVEL", level)
+		t.Setenv("REPJAN_LOG_LEVEL", level)
 		cfg, err := Load()
 		require.NoError(t, err, "log level %s should be valid", level)
 		assert.Equal(t, level, cfg.LogLevel)
@@ -93,10 +82,8 @@ func TestLoad_AllLogLevels(t *testing.T) {
 }
 
 func TestLoad_AllLogFormats(t *testing.T) {
-	defer os.Unsetenv("REPJAN_LOG_FORMAT")
-
 	for _, format := range validLogFormats {
-		os.Setenv("REPJAN_LOG_FORMAT", format)
+		t.Setenv("REPJAN_LOG_FORMAT", format)
 		cfg, err := Load()
 		require.NoError(t, err, "log format %s should be valid", format)
 		assert.Equal(t, format, cfg.LogFormat)
@@ -138,8 +125,7 @@ func TestLoad_DurationVariations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv("REPJAN_SYNC_INTERVAL", tt.input)
-			defer os.Unsetenv("REPJAN_SYNC_INTERVAL")
+			t.Setenv("REPJAN_SYNC_INTERVAL", tt.input)
 
 			cfg, err := Load()
 			require.NoError(t, err)
@@ -149,17 +135,11 @@ func TestLoad_DurationVariations(t *testing.T) {
 }
 
 func TestLoad_EmptyEnvVars(t *testing.T) {
-	// Set empty strings - should use defaults
-	os.Setenv("REPJAN_LOG_LEVEL", "")
-	os.Setenv("REPJAN_LOG_FORMAT", "")
-	os.Setenv("REPJAN_SYNC_INTERVAL", "")
-	os.Setenv("REPJAN_DB_PATH", "")
-	defer func() {
-		os.Unsetenv("REPJAN_LOG_LEVEL")
-		os.Unsetenv("REPJAN_LOG_FORMAT")
-		os.Unsetenv("REPJAN_SYNC_INTERVAL")
-		os.Unsetenv("REPJAN_DB_PATH")
-	}()
+	// Set empty strings - should use defaults (t.Setenv auto-restores)
+	t.Setenv("REPJAN_LOG_LEVEL", "")
+	t.Setenv("REPJAN_LOG_FORMAT", "")
+	t.Setenv("REPJAN_SYNC_INTERVAL", "")
+	t.Setenv("REPJAN_DB_PATH", "")
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -206,11 +186,10 @@ func TestGetEnv(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			key := "TEST_GET_ENV_KEY"
 			if tt.setEnv {
-				os.Setenv(key, tt.envValue)
+				t.Setenv(key, tt.envValue)
 			} else {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			}
-			defer os.Unsetenv(key)
 
 			result := getEnv(key, tt.defaultValue)
 			assert.Equal(t, tt.expected, result)
@@ -267,11 +246,10 @@ func TestGetDurationEnv(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			key := "TEST_GET_DURATION_KEY"
 			if tt.setEnv {
-				os.Setenv(key, tt.envValue)
+				t.Setenv(key, tt.envValue)
 			} else {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			}
-			defer os.Unsetenv(key)
 
 			result := getDurationEnv(key, tt.defaultValue)
 			assert.Equal(t, tt.expected, result)
@@ -280,8 +258,7 @@ func TestGetDurationEnv(t *testing.T) {
 }
 
 func TestLoad_DBPathWithSpaces(t *testing.T) {
-	os.Setenv("REPJAN_DB_PATH", "/path/with spaces/test.db")
-	defer os.Unsetenv("REPJAN_DB_PATH")
+	t.Setenv("REPJAN_DB_PATH", "/path/with spaces/test.db")
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -289,8 +266,7 @@ func TestLoad_DBPathWithSpaces(t *testing.T) {
 }
 
 func TestLoad_DBPathWithSpecialChars(t *testing.T) {
-	os.Setenv("REPJAN_DB_PATH", "/path/with-dashes_and_underscores/test.db")
-	defer os.Unsetenv("REPJAN_DB_PATH")
+	t.Setenv("REPJAN_DB_PATH", "/path/with-dashes_and_underscores/test.db")
 
 	cfg, err := Load()
 	require.NoError(t, err)

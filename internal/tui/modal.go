@@ -6,8 +6,6 @@ package tui
 import (
 	"fmt"
 	"log/slog"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -96,33 +94,6 @@ func pluralize(count int) string {
 		return ""
 	}
 	return "s"
-}
-
-// startArchiveOperation returns a command to begin the archive operation.
-func (m Model) startArchiveOperation() tea.Cmd {
-	return func() tea.Msg {
-		// Get marked repos
-		var toArchive []github.Repository
-		for _, repo := range m.repos {
-			if m.marked[repo.FullName()] {
-				toArchive = append(toArchive, repo)
-			}
-		}
-
-		if len(toArchive) == 0 {
-			return ArchiveCompleteMsg{
-				Succeeded: 0,
-				Failed:    0,
-				Errors:    nil,
-			}
-		}
-
-		// Return first progress message
-		return ArchiveProgressMsg{
-			Current: 0,
-			Total:   len(toArchive),
-		}
-	}
 }
 
 // archiveNextRepo returns a command to archive the next repository in the queue.
@@ -396,21 +367,6 @@ func formatDaysAgo(days int) string {
 		return "1 year ago"
 	}
 	return fmt.Sprintf("%d years ago", years)
-}
-
-// openInBrowser opens the given URL in the default browser.
-func openInBrowser(url string) tea.Cmd {
-	return func() tea.Msg {
-		var cmd *exec.Cmd
-		switch runtime.GOOS {
-		case "darwin":
-			cmd = exec.Command("open", url)
-		default:
-			cmd = exec.Command("xdg-open", url)
-		}
-		_ = cmd.Run()
-		return nil
-	}
 }
 
 // renderHelpModal renders the help modal with keybinding information.

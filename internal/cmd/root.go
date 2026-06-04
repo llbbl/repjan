@@ -77,7 +77,7 @@ It helps identify inactive repos and batch archive them.`,
 		if err != nil {
 			return fmt.Errorf("opening database: %w", err)
 		}
-		defer db.Close(database)
+		defer func() { _ = db.Close(database) }()
 
 		// Ensure migrations are run
 		if err := db.RunMigrations(database); err != nil {
