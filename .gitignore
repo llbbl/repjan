@@ -45,3 +45,8 @@ repjan.db
 .env.local
 agents.md
 gemini.md
+
+# beads
+.beads/
+.dolt/
+.beads-credential-key
