@@ -7,9 +7,23 @@ on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_call:
+    inputs:
+      tag:
+        description: The existing version tag to build and release
+        required: true
+        type: string
+      commit:
+        description: The commit that the tag must point to
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  RELEASE_SHA: ${{ inputs.commit || github.sha }}
 
 jobs:
   build:
@@ -43,6 +57,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+
+      - name: Verify tag commit
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$(git rev-parse --verify "${RELEASE_SHA}^{commit}")"
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -51,11 +71,13 @@ jobs:
           cache: true
 
       - name: Build binary
+        shell: bash
         env:
+          ARTIFACT: ${{ matrix.artifact }}
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-        run: go build -ldflags="-s -w -X github.com/llbbl/repjan/internal/cmd.Version=${{ github.ref_name }}" -o ${{ matrix.artifact }} ./cmd/repjan
+        run: go build -ldflags="-s -w -X github.com/llbbl/repjan/internal/cmd.Version=$RELEASE_TAG" -o "$ARTIFACT" ./cmd/repjan
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -73,7 +95,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
           fetch-depth: 0
+
+      - name: Verify tag commit
+        run: test "$(git rev-parse HEAD)" = "$(git rev-parse --verify "${RELEASE_SHA}^{commit}")"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v7
@@ -97,7 +123,7 @@ jobs:
         id: changelog
         with:
           config: cliff.toml
-          args: --latest --strip header
+          args: --current --strip header
         env:
           OUTPUT: CHANGELOG.md
         continue-on-error: true
@@ -105,6 +131,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             release/repjan-linux-x64
             release/repjan-darwin-arm64

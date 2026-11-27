@@ -17,9 +17,12 @@ permissions:
 jobs:
   tag:
     name: Create Version Tag
+    outputs:
+      tag: ${{ steps.tag.outputs.new_tag }}
     runs-on: ubuntu-latest
-    # Only run if CI passed and commit message doesn't indicate a release
+    # Tag successful CI runs for pushes to main.
     if: >
+      github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.conclusion == 'success' &&
       !startsWith(github.event.workflow_run.head_commit.message, 'chore(release):')
 
@@ -57,10 +60,19 @@ jobs:
           NEW_TAG: ${{ steps.tag.outputs.new_tag }}
           RELEASE_TYPE: ${{ steps.tag.outputs.release_type }}
         run: |
-          echo "### Version Bump Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Previous version:** $PREV_TAG" >> $GITHUB_STEP_SUMMARY
-          echo "- **New version:** $NEW_TAG" >> $GITHUB_STEP_SUMMARY
-          echo "- **Bump type:** $RELEASE_TYPE" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Release workflow will now build and publish binaries." >> $GITHUB_STEP_SUMMARY
+          {
+            echo "### Version Bump Summary"
+            echo ""
+            echo "- **Previous version:** $PREV_TAG"
+            echo "- **New version:** $NEW_TAG"
+            echo "- **Bump type:** $RELEASE_TYPE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    # Tag pushes authenticated with GITHUB_TOKEN do not start another workflow.
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+      commit: ${{ github.event.workflow_run.head_sha }}
