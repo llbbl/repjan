@@ -102,7 +102,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$(git rev-parse --verify "${RELEASE_SHA}^{commit}")"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
